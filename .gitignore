@@ -1,0 +1,9 @@
+# Forms never go in the repository: real ones can carry personal data in
+# their packets.
+*.pdf
+*.xdp
+forms/
+*.test
+*.exe
+*.prof
+/xfa

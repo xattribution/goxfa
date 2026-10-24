@@ -1,0 +1,50 @@
+/* goxfa viewer. Pages are drawn at 96 CSS pixels per inch. */
+:root {
+  --xfa-bg: #e8eaed;
+  --xfa-page: #fff;
+  --xfa-field: rgba(40, 110, 220, 0.07);
+  --xfa-field-hover: rgba(40, 110, 220, 0.13);
+  --xfa-focus: #2860c8;
+  --xfa-required: rgba(200, 110, 0, 0.55);
+  --xfa-bar: #fff;
+  --xfa-text: #1d1f23;
+  --xfa-muted: #5b616b;
+}
+html, body { margin: 0; background: var(--xfa-bg); color: var(--xfa-text); font: 14px/1.4 system-ui, sans-serif; }
+.xfa-bar { position: sticky; top: 0; z-index: 10; display: flex; gap: 12px; align-items: center; padding: 8px 16px; background: var(--xfa-bar); border-bottom: 1px solid #d0d4da; }
+.xfa-bar h1 { font-size: 15px; font-weight: 600; margin: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xfa-status { color: var(--xfa-muted); font-size: 13px; }
+.xfa-bar button { min-height: 36px; padding: 0 16px; border-radius: 6px; border: 1px solid #b8bec7; background: #fff; font: inherit; cursor: pointer; }
+.xfa-bar button.primary { background: var(--xfa-focus); border-color: var(--xfa-focus); color: #fff; }
+.xfa-doc { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; }
+.xfa-page { position: relative; background: var(--xfa-page); box-shadow: 0 1px 4px rgba(0,0,0,.25); flex: none; }
+.xfa-svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.xfa-svg text { white-space: pre; }
+.xfa-layer, .xfa-group { position: absolute; left: 0; top: 0; }
+.xfa-group { transform-origin: 0 0; }
+.xfa-input, .xfa-check, .xfa-signature, .xfa-button { position: absolute; box-sizing: border-box; margin: 0; border: 0; padding: 0 2px; background: var(--xfa-field); color: #000; outline: none; border-radius: 0; }
+.xfa-input:hover, .xfa-check:hover { background: var(--xfa-field-hover); }
+.xfa-input:focus, .xfa-check:focus { background: #fff; box-shadow: 0 0 0 2px var(--xfa-focus); z-index: 2; }
+textarea.xfa-input { resize: none; line-height: 1.15; padding-top: 1px; overflow: hidden; }
+textarea.xfa-input:focus { overflow: auto; }
+select.xfa-input { appearance: none; -webkit-appearance: none; cursor: pointer; }
+.xfa-check { display: flex; align-items: center; justify-content: center; cursor: pointer; line-height: 1; padding: 0; }
+.xfa-round { border-radius: 50%; }
+.xfa-required { box-shadow: inset 0 -1px 0 var(--xfa-required); }
+.xfa-readonly { background: transparent; cursor: default; }
+.xfa-signature { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--xfa-muted); background: rgba(200, 150, 0, 0.10); border: 1px dashed rgba(150, 110, 0, 0.5); }
+.xfa-button { display: flex; align-items: center; justify-content: center; font-size: 11px; background: transparent; }
+@media (max-width: 700px) { .xfa-doc { padding: 16px 0; } }
+@media print {
+  html, body { background: #fff; }
+  .xfa-bar, .xfa-noprint, .xfa-button { display: none !important; }
+  .xfa-doc { padding: 0; gap: 0; }
+  .xfa-page { box-shadow: none; break-after: page; }
+  .xfa-input, .xfa-check { background: transparent !important; box-shadow: none !important; }
+  .xfa-signature { background: transparent; border: 0; color: transparent; }
+}
+@media (prefers-color-scheme: dark) {
+  :root { --xfa-bg: #2a2d32; --xfa-bar: #1d1f23; --xfa-text: #e8eaed; --xfa-muted: #a8aeb8; }
+  .xfa-bar { border-color: #3a3e45; }
+  .xfa-bar button { background: #2a2d32; color: var(--xfa-text); border-color: #4a4f57; }
+}
