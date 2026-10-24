@@ -17,6 +17,11 @@ type HandlerOptions struct {
 	Save func(pdf []byte) error
 	// SignatureText labels signature fields.
 	SignatureText string
+	// Sign, when set, makes unsigned signature fields sign when clicked.
+	// It gives the options for one signature (the signer, its chain and
+	// anything else); Field is filled in. The signed PDF goes to Save,
+	// which Sign needs. Asking for a PIN is the signer's business.
+	Sign func(field string) (SignOptions, error)
 }
 
 // Handler serves the form for filling in a browser:
@@ -41,7 +46,7 @@ func (f *Form) Handler(o HandlerOptions) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		page := ViewerHTML(doc, ViewerOptions{Title: o.Title, Endpoint: ".", SignatureText: o.SignatureText, NoSave: o.Save == nil})
+		page := ViewerHTML(doc, ViewerOptions{Title: o.Title, Endpoint: ".", SignatureText: o.SignatureText, NoSave: o.Save == nil, CanSign: o.Sign != nil && o.Save != nil})
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write(page)
@@ -56,6 +61,40 @@ func (f *Form) Handler(o HandlerOptions) http.Handler {
 		defer mu.Unlock()
 		if err := f.Set(req.SOM, req.Value); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		doc, err := f.Layout()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(doc)
+	})
+	mux.HandleFunc("POST /sign", func(w http.ResponseWriter, r *http.Request) {
+		if o.Sign == nil || o.Save == nil {
+			http.NotFound(w, r)
+			return
+		}
+		var req struct{ SOM string }
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+			http.Error(w, "The request couldn't be read.", http.StatusBadRequest)
+			return
+		}
+		so, err := o.Sign(req.SOM)
+		if err != nil {
+			http.Error(w, "Not signed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		so.Field = req.SOM
+		mu.Lock()
+		defer mu.Unlock()
+		signed, err := f.Sign(so)
+		if err == nil {
+			err = o.Save(signed)
+		}
+		if err != nil {
+			http.Error(w, "Not signed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		doc, err := f.Layout()

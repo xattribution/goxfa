@@ -23,6 +23,7 @@ html, body { margin: 0; background: var(--xfa-bg); color: var(--xfa-text); font:
 .xfa-layer, .xfa-group { position: absolute; left: 0; top: 0; }
 .xfa-group { transform-origin: 0 0; }
 .xfa-input, .xfa-check, .xfa-signature, .xfa-button { position: absolute; box-sizing: border-box; margin: 0; border: 0; padding: 0 2px; background: var(--xfa-field); color: #000; outline: none; border-radius: 0; }
+.xfa-signature.xfa-signed { white-space: pre-line; text-align: left; justify-content: flex-start; padding: 0 4px; color: #1d1f23; background: rgba(30, 140, 70, 0.08); border: 1px solid rgba(30, 120, 60, 0.45); font-size: 10px; line-height: 1.25; }
 .xfa-input:hover, .xfa-check:hover { background: var(--xfa-field-hover); }
 .xfa-input:focus, .xfa-check:focus { background: #fff; box-shadow: 0 0 0 2px var(--xfa-focus); z-index: 2; }
 textarea.xfa-input { resize: none; line-height: 1.15; padding-top: 1px; overflow: hidden; }
@@ -42,6 +43,7 @@ select.xfa-input { appearance: none; -webkit-appearance: none; cursor: pointer; 
   .xfa-page { box-shadow: none; break-after: page; }
   .xfa-input, .xfa-check { background: transparent !important; box-shadow: none !important; }
   .xfa-signature { background: transparent; border: 0; color: transparent; }
+  .xfa-signature.xfa-signed { color: #000; }
 }
 @media (prefers-color-scheme: dark) {
   :root { --xfa-bg: #2a2d32; --xfa-bar: #1d1f23; --xfa-text: #e8eaed; --xfa-muted: #a8aeb8; }

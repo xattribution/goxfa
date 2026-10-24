@@ -104,6 +104,9 @@ func (f *Form) describe(in *Inst) Field {
 	case "readOnly", "protected", "nonInteractive":
 		fd.ReadOnly = true
 	}
+	if _, ok := f.locked()[in.SOM]; ok {
+		fd.ReadOnly = true
+	}
 	fd.Hidden = hiddenUp(in)
 	if in.Kind == "exclGroup" {
 		fd.Kind = "radio"
@@ -315,6 +318,9 @@ func (f *Form) Set(som, value string) error {
 	in := f.bySOM[som]
 	if in == nil || (in.Kind != "field" && in.Kind != "exclGroup") {
 		return fmt.Errorf("%w: %s", ErrNoField, som)
+	}
+	if sig, ok := f.locked()[som]; ok {
+		return fmt.Errorf("%w: %s is locked by the signature in %s", ErrLocked, som, sig)
 	}
 	if in.match == "member" {
 		// a radio button: setting it on sets its group

@@ -3,6 +3,9 @@ package xfa
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -40,6 +43,10 @@ const sampleBody = `
     <ui><dateTimeEdit/></ui>
     <format><picture>date{DD MMM YY}</picture></format>
     <bind match="once"><picture>date{YYYYMMDD}</picture></bind>
+  </field>
+  <field name="Sig" x="3.5in" y="1.5in" w="3in" h="0.5in">
+    <ui><signature><manifest action="include"><ref>xfa[0].template[0].form1[0].Page1[0].Name[0]</ref></manifest></signature></ui>
+    <caption placement="top" reserve="0.15in"><value><text>SIGNATURE</text></value></caption>
   </field>
   <draw name="Note" x="0" y="1.5in" w="3in">
     <value><exData contentType="text/html"><body xmlns="http://www.w3.org/1999/xhtml"><p>Plain <span style="font-weight:bold">bold</span> text that runs long enough to wrap onto a second line here.</p></body></exData></value>
@@ -409,7 +416,29 @@ func TestRealForms(t *testing.T) {
 			if v, _ := g.Value(som); v != "DOE, JANE A" {
 				t.Errorf("%s after save = %q", som, v)
 			}
-			t.Logf("%d pages, %d fields", len(doc.Pages), len(f.Fields()))
+			// sign the first signature field, with the value in the same revision
+			sigs := g.SignatureFields()
+			if len(sigs) == 0 {
+				t.Logf("%d pages, %d fields, no signature fields", len(doc.Pages), len(f.Fields()))
+				return
+			}
+			key := must(rsa.GenerateKey(rand.Reader, 2048))
+			if err := g.Set(som, "ROE, RICHARD"); err != nil && !errors.Is(err, ErrLocked) {
+				t.Fatal(err)
+			}
+			signed, err := g.Sign(SignOptions{Field: sigs[0].SOM, Signer: key, Chain: testSigner(t, key)})
+			if err != nil {
+				t.Fatalf("signing %s: %v", sigs[0].SOM, err)
+			}
+			checkByteRange(t, signed)
+			out := pdfsig(t, signed)
+			if out != "" && !strings.Contains(out, "Signature is Valid") {
+				t.Errorf("pdfsig:\n%s", out)
+			}
+			if os.Getenv("GOXFA_OUT") != "" {
+				os.WriteFile(filepath.Join(os.Getenv("GOXFA_OUT"), "signed-"+filepath.Base(p)), signed, 0o644)
+			}
+			t.Logf("%d pages, %d fields, signed %s", len(doc.Pages), len(f.Fields()), sigs[0].SOM)
 		})
 	}
 }

@@ -32,6 +32,18 @@ mux.Handle("/forms/2875/", http.StripPrefix("/forms/2875", f.Handler(xfa.Handler
 
 The handler does no authentication. The program that mounts it decides who can reach it. If you draw forms in your own page instead, `xfa.ViewerJS()` and `xfa.ViewerCSS()` give you the viewer by itself.
 
+## Signing
+
+goxfa signs signature fields with any `crypto.Signer`, including a smart card through the Windows certificate store (package `winsign`, no cgo). The signature goes in one incremental update with any new values. It can carry an RFC 3161 timestamp and embedded OCSP answers, and fields in the signature's manifest are locked afterwards.
+
+```go
+certs, err := winsign.SigningCertificates()   // a CAC's Digital Signature certificate, for one
+signer, err := certs[0].Signer()             // Windows asks for the PIN when it signs
+signed, err := f.Sign(xfa.SignOptions{Field: som, Signer: signer, Chain: certs[0].Chain})
+```
+
+[docs/SIGNING.md](docs/SIGNING.md) explains how it works, how it's checked and what's left.
+
 ## The command
 
 ```
@@ -44,6 +56,9 @@ xfa flatten form.pdf out.pdf            an ordinary PDF of the form as it stands
 xfa html form.pdf > form.html           a standalone page with the live form
 xfa fill form.pdf values.json out.pdf   set values (SOM path → value) and save
 xfa serve form.pdf [127.0.0.1:47761]    fill the form in a browser; Save writes form-filled.pdf
+xfa sigs form.pdf                       the signature fields and who signed them
+xfa certs                               the signing certificates in the Windows store
+xfa sign [-cert N] form.pdf field out.pdf   sign a field (-key and -chain take PEM files instead)
 ```
 
 ## What it covers
@@ -62,7 +77,7 @@ xfa serve form.pdf [127.0.0.1:47761]    fill the form in a browser; Save writes 
 - **Scripts don't run.** Neither JavaScript nor FormCalc runs, so calculated fields keep their stored value and script-driven show and hide doesn't happen. Page-number fields are filled the way their scripts would fill them.
 - **Fonts are approximated.** Text is measured with the standard 14 font metrics, with width corrections for common faces (Myriad, Calibri, Verdana, Tahoma, narrow faces). Line breaks match Acrobat on the forms tested, but a line can break one word early or late. The flattened PDF draws with the same metrics it measured with, so text never overflows its box.
 - **Static XFA forms** already carry real PDF pages that every viewer shows. goxfa reads and fills them, but its layout of them is only approximate.
-- **Signing is not built yet.** [docs/SIGNING.md](docs/SIGNING.md) sets out what it takes.
+- **Signatures haven't been checked in Acrobat yet.** They validate in poppler and OpenSSL. See below.
 
 ## How it's checked
 

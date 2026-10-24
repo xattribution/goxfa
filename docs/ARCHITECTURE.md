@@ -28,7 +28,12 @@ PDF bytes ──Open──▶ packets ──parse──▶ template + datasets �
 | layout.go | Layout: boxes for subforms, fields and draws, sized from the template and their content. Containers are positioned or flowed (`tb`, `lr-tb`, `rl-tb`, tables). Then pagination: page areas, content areas, breaks, splitting flowed boxes across pages, master-page content, and page numbers. |
 | flatten.go | A small PDF writer: every item drawn with the standard 14 fonts at the measured widths, check marks drawn as paths, and images embedded. |
 | viewer.go, viewer/ | The live form: an SVG of each page with HTML inputs placed on the fields. Text is stretched to the width Go measured, so lines break where the layout put them, whatever fonts the browser has. |
-| handler.go | An `http.Handler` that serves the viewer, takes changes, lays the form out again and saves. |
+| handler.go | An `http.Handler` that serves the viewer, takes changes, lays the form out again, saves and signs. |
+| pdfobj.go | Writes PDF objects into an update, encrypting their strings with the object's key. |
+| sign.go | Signing: the AcroForm field for the SOM path, the signature dictionary with its holes, the byte range, and reading back who signed what. Manifest locks. |
+| internal/cms | CMS SignedData built by hand in DER: detached signatures for PDFs, with the signed and unsigned attributes PDF readers look for. |
+| tsa.go | RFC 3161 timestamps and OCSP answers, fetched only when a program asks. |
+| winsign/ | The Windows certificate store and CNG signing, through crypt32.dll and ncrypt.dll. |
 
 ## The Doc
 

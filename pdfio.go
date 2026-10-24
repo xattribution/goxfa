@@ -135,13 +135,31 @@ func streamContent(x *model.XRefTable, ir types.IndirectRef) ([]byte, error) {
 
 // ---- incremental update ----
 
+// updObj is one object in an incremental update: a FlateDecode stream
+// with the given content, or a value written with its strings encrypted
+// the way the file encrypts them.
+type updObj struct {
+	num, gen int
+	stream   []byte       // non-nil: a stream with this (unencoded) content
+	dict     types.Dict   // a stream's own entries, besides its filter and length
+	value    types.Object // otherwise: the object
+}
+
 type newStream struct {
 	gen     int
 	content []byte // unencoded
 }
 
-// appendUpdate writes data plus new revisions of the given streams.
-func appendUpdate(data []byte, x *model.XRefTable, streams map[int]newStream) ([]byte, error) {
+func streamUpdates(streams map[int]newStream) []updObj {
+	var out []updObj
+	for n, st := range streams {
+		out = append(out, updObj{num: n, gen: st.gen, stream: st.content})
+	}
+	return out
+}
+
+// appendUpdate writes data plus new revisions of the given objects.
+func appendUpdate(data []byte, x *model.XRefTable, objs []updObj) ([]byte, error) {
 	c, err := newCrypt(x)
 	if err != nil {
 		return nil, err
@@ -156,28 +174,44 @@ func appendUpdate(data []byte, x *model.XRefTable, streams map[int]newStream) ([
 	if n := len(data); n > 0 && data[n-1] != '\n' && data[n-1] != '\r' {
 		out.WriteByte('\n')
 	}
+	sort.Slice(objs, func(i, j int) bool { return objs[i].num < objs[j].num })
 	var nums []int
-	for n := range streams {
-		nums = append(nums, n)
-	}
-	sort.Ints(nums)
 	offs, gens := map[int]int{}, map[int]int{}
-	for _, n := range nums {
-		st := streams[n]
+	for _, o := range objs {
+		if _, dup := offs[o.num]; dup {
+			return nil, fmt.Errorf("xfa: object %d written twice in one update", o.num)
+		}
+		nums = append(nums, o.num)
+		offs[o.num], gens[o.num] = out.Len(), o.gen
+		if o.stream == nil {
+			body, err := pdfValue(o.value, o.num, o.gen, c)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Fprintf(&out, "%d %d obj\n%s\nendobj\n", o.num, o.gen, body)
+			continue
+		}
 		var z bytes.Buffer
 		zw := zlib.NewWriter(&z)
-		zw.Write(st.content)
+		zw.Write(o.stream)
 		if err := zw.Close(); err != nil {
 			return nil, err
 		}
 		content := z.Bytes()
 		if c != nil && c.stm {
-			if content, err = c.seal(content, n, st.gen, c.aesStm); err != nil {
+			if content, err = c.seal(content, o.num, o.gen, c.aesStm); err != nil {
 				return nil, err
 			}
 		}
-		offs[n], gens[n] = out.Len(), st.gen
-		fmt.Fprintf(&out, "%d %d obj\n<< /Filter /FlateDecode /Length %d >>\nstream\n", n, st.gen, len(content))
+		extra := ""
+		if len(o.dict) > 0 {
+			d, err := pdfValue(o.dict, o.num, o.gen, c)
+			if err != nil {
+				return nil, err
+			}
+			extra = strings.TrimSuffix(strings.TrimPrefix(d, "<<"), ">>")
+		}
+		fmt.Fprintf(&out, "%d %d obj\n<<%s /Filter /FlateDecode /Length %d >>\nstream\n", o.num, o.gen, extra, len(content))
 		out.Write(content)
 		out.WriteString("\nendstream\nendobj\n")
 	}
@@ -192,11 +226,10 @@ func appendUpdate(data []byte, x *model.XRefTable, streams map[int]newStream) ([
 		trailer += " /Encrypt " + x.Encrypt.PDFString()
 	}
 	trailer += fmt.Sprintf(" /Prev %d", prev)
-	size := 0
-	if x.Size != nil {
-		size = *x.Size
+	size := nextObjNum(x)
+	for _, n := range nums {
+		size = max(size, n+1)
 	}
-	size = max(size, x.MaxObjNr+1)
 	if xrefStreamAt(data, prev) {
 		xn := size
 		size++
@@ -228,6 +261,15 @@ func appendUpdate(data []byte, x *model.XRefTable, streams map[int]newStream) ([
 	}
 	fmt.Fprintf(&out, "trailer\n<< /Size %d %s >>\nstartxref\n%d\n%%%%EOF\n", size, trailer, start)
 	return out.Bytes(), nil
+}
+
+// nextObjNum is the first object number an update may use for new objects.
+func nextObjNum(x *model.XRefTable) int {
+	size := 0
+	if x.Size != nil {
+		size = *x.Size
+	}
+	return max(size, x.MaxObjNr+1)
 }
 
 func xrefIndex(nums []int) string {
@@ -272,7 +314,7 @@ func xrefStreamAt(data []byte, off int) bool {
 type crypt struct {
 	key            []byte
 	r              int
-	stm            bool
+	stm, str       bool // streams and strings are encrypted
 	aesStm, aesStr bool
 }
 
@@ -290,10 +332,13 @@ func newCrypt(x *model.XRefTable) (*crypt, error) {
 	if x.E == nil || len(x.EncKey) == 0 {
 		return nil, errors.New("xfa: the PDF's encryption key isn't known")
 	}
-	c := &crypt{key: x.EncKey, r: x.E.R, stm: true, aesStm: x.AES4Streams, aesStr: x.AES4Strings}
+	c := &crypt{key: x.EncKey, r: x.E.R, stm: true, str: true, aesStm: x.AES4Streams, aesStr: x.AES4Strings}
 	if x.E.V >= 4 {
 		if n := ed.NameEntry("StmF"); n == nil || *n == "Identity" {
 			c.stm = false
+		}
+		if n := ed.NameEntry("StrF"); n == nil || *n == "Identity" {
+			c.str = false
 		}
 	}
 	return c, nil

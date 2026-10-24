@@ -19,8 +19,10 @@ type Form struct {
 	data                            *Node // xfa:data
 	dataRoot                        *Node // the root data group (named after the root subform)
 
-	dynamic bool // laid out by the viewer (dynamicRender required), not by the PDF's own pages
-	dirty   bool
+	dynamic  bool // laid out by the viewer (dynamicRender required), not by the PDF's own pages
+	dirty    bool
+	locks    map[string]string // fields locked by signatures: field → the signature field
+	sigCache map[string]pdfSig // signed signature fields, by SOM path
 
 	root  *Inst // the merged form: one instance per container
 	bySOM map[string]*Inst
@@ -171,12 +173,12 @@ func (f *Form) Save() ([]byte, error) {
 	if f.pdf.whole {
 		p := f.pdf.packets[0]
 		gen := p.ref.GenerationNumber.Value()
-		return appendUpdate(f.pdf.data, f.pdf.x, map[int]newStream{p.ref.ObjectNumber.Value(): {gen: gen, content: f.xdpDoc.Bytes()}})
+		return appendUpdate(f.pdf.data, f.pdf.x, streamUpdates(map[int]newStream{p.ref.ObjectNumber.Value(): {gen: gen, content: f.xdpDoc.Bytes()}}))
 	}
 	for _, p := range f.pdf.packets {
 		if p.name == "datasets" {
 			gen := p.ref.GenerationNumber.Value()
-			return appendUpdate(f.pdf.data, f.pdf.x, map[int]newStream{p.ref.ObjectNumber.Value(): {gen: gen, content: f.dsDoc.Bytes()}})
+			return appendUpdate(f.pdf.data, f.pdf.x, streamUpdates(map[int]newStream{p.ref.ObjectNumber.Value(): {gen: gen, content: f.dsDoc.Bytes()}}))
 		}
 	}
 	return nil, errors.New("xfa: the form has no datasets packet to write the values into")

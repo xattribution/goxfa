@@ -7,6 +7,9 @@
 //	xfa html form.pdf > form.html     a standalone page with the live form
 //	xfa fill form.pdf values.json out.pdf   set values (by SOM path) and save
 //	xfa serve form.pdf [addr]         fill the form in a browser, and save it
+//	xfa sigs form.pdf                 the signature fields and who signed them
+//	xfa sign [flags] form.pdf field out.pdf   sign a signature field
+//	xfa certs                         the signing certificates in the Windows store
 package main
 
 import (
@@ -18,6 +21,16 @@ import (
 )
 
 func main() {
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "certs":
+			check(listCerts())
+			return
+		case "sign":
+			check(signCmd(os.Args[2:]))
+			return
+		}
+	}
 	if len(os.Args) < 3 {
 		usage()
 	}
@@ -65,6 +78,17 @@ func main() {
 		saved, err := f.Save()
 		check(err)
 		check(os.WriteFile(os.Args[4], saved, 0o644))
+	case "sigs":
+		for _, s := range f.SignatureFields() {
+			state := "not signed"
+			if s.Signed {
+				state = "signed by " + s.Signer + " on " + s.Time.Format("02 Jan 06 15:04")
+			}
+			fmt.Printf("%-70s %s\n", s.SOM, state)
+			if len(s.Locks) > 0 {
+				fmt.Printf("  locks %d fields once signed\n", len(s.Locks))
+			}
+		}
 	case "serve":
 		addr := "127.0.0.1:47761"
 		if len(os.Args) > 3 {
@@ -89,7 +113,7 @@ func out(v any) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: xfa info|fields|layout|flatten|html|fill|serve form.pdf [args]")
+	fmt.Fprintln(os.Stderr, "usage: xfa info|fields|layout|flatten|html|fill|serve|sigs form.pdf [args]\n       xfa sign [flags] form.pdf field out.pdf\n       xfa certs")
 	os.Exit(2)
 }
 

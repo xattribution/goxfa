@@ -1,6 +1,6 @@
 # Signing XFA forms
 
-This is what it takes to sign an XFA form with a smart card (a CAC or PIV card) so that Acrobat and Reader show the signature as valid. goxfa doesn't sign yet. This document is the plan.
+This is what it takes to sign an XFA form with a smart card (a CAC or PIV card) so that Acrobat and Reader show the signature as valid, and what goxfa does of it. The last sections say what's built, how it's checked, and what's left.
 
 ## What a PDF signature is
 
@@ -28,18 +28,18 @@ The steps are:
 4. Build the CMS SignedData. It is detached (no content inside it), with signed attributes for content type, message digest (the hash from step 3), signing time and, for CAdES, signing-certificate-v2. Hash the DER of the signed attributes and have the card sign that hash.
 5. Write the CMS as hex into the zeros. Nothing else moves.
 
-goxfa already writes incremental updates, encrypted or not (`appendUpdate` in pdfio.go). Signing adds the reserved hole, the byte range, and the CMS. With encryption, the `/Contents` string is never encrypted. Everything else in the update is encrypted as usual.
+goxfa does exactly this (`Form.Sign` in sign.go, the CMS in internal/cms). With encryption, the `/Contents` string is never encrypted. Everything else in the update is encrypted as usual.
 
 ## What's different about XFA
 
 **The signature field exists twice.** An XFA form describes its signature field in the template (`<field><ui><signature>`), and the PDF keeps a matching AcroForm field named by its SOM path, such as `form1[0].Page2[0].Signature[0]`. The PDF signature goes in the AcroForm field. Acrobat ties it to the XFA field by that name. In a dynamic form the AcroForm field often has no widget on a page, because the pages don't exist in the PDF. The signature still validates, and Acrobat draws its appearance in the XFA field's box.
 
-**The data must be saved in the same revision, or earlier.** The signature covers the datasets stream as it stands in the signed revision. goxfa should write the values and the signature in one update, or write the values first and then sign. Anything saved after the signature shows in Acrobat as "changed after signing". Acrobat counts form filling after a signature as allowed or not according to the permissions below.
+**The data must be saved in the same revision, or earlier.** The signature covers the datasets stream as it stands in the signed revision. goxfa writes any values set since the form was opened and the signature in one update. Anything saved after the signature shows in Acrobat as "changed after signing". Acrobat counts form filling after a signature as allowed or not according to the permissions below.
 
 **The template says what signing locks and which certificates it takes.** An XFA signature field can carry:
 
-- `<manifest>`: the fields this signature covers. After signing, Acrobat makes them read-only. The PDF equivalent is a `/Lock` dictionary on the signature field (`/Type /SigFieldLock /Action /Include /Fields [...]`) and a FieldMDP transform in the signature's `/Reference`. goxfa should write both, so the locks hold in Acrobat whatever it reads.
-- `<filter>`: the certificates allowed (issuers, policy OIDs, key usage), digest methods, the subfilter, and whether a reason is required. goxfa should refuse a certificate the filter refuses, with a plain message, before asking for the PIN.
+- `<manifest>`: the fields this signature covers. After signing, Acrobat makes them read-only. The PDF equivalent is a `/Lock` dictionary on the signature field (`/Type /SigFieldLock /Action /Include /Fields [...]`) and a FieldMDP transform in the signature's `/Reference`. goxfa enforces the manifest itself (a locked field refuses new values) but doesn't write either PDF entry yet.
+- `<filter>`: the certificates allowed (issuers, policy OIDs, key usage), digest methods, the subfilter, and whether a reason is required. None of the forms tested carries one, so goxfa doesn't read it yet. It does refuse certificates that aren't for signing.
 - `<mdp permissions="1|2|3">`: the first signature can certify the document. 1 allows no changes, 2 allows form filling and signing, and 3 also allows comments.
 
 **The form packet's checksum.** Acrobat stores a checksum of the form state in the `form` packet. When the checksum doesn't match, Acrobat merges the data again on open and runs the initialize and calculate scripts. That changes nothing on disk, so a signature stays valid. But a calculated field can show a different value than the one that was signed. goxfa doesn't run scripts, so a form whose calculated fields matter should be checked in Acrobat before anyone relies on it.
@@ -73,27 +73,45 @@ CRLs for large PKIs can be tens of megabytes. Prefer OCSP.
 
 **Time.** Without a timestamp, the signing time is the computer's clock, and readers say so. An RFC 3161 timestamp from a timestamp authority goes in the CMS as an unsigned attribute (`id-aa-timeStampToken`, 1.2.840.113549.1.9.16.2.14). It covers the signature value. Use one where an authority is reachable. Otherwise leave it out.
 
-## What goxfa would add
+## What goxfa does
 
 ```go
-type SignOptions struct {
-	Field    string            // the signature field's SOM path
-	Signer   crypto.Signer     // the card's key
-	Chain    []*x509.Certificate // signing certificate first
-	Reason, Location string
-	OCSP     [][]byte          // optional revocation answers to embed
-	TSA      func(digest []byte) ([]byte, error) // optional RFC 3161 timestamp
-}
-
-func (f *Form) Sign(o SignOptions) ([]byte, error)
+signed, err := form.Sign(xfa.SignOptions{
+	Field:  "form1[0].page1[0].Part1[0].userSig[0].userSig[0]",
+	Signer: signer,           // any crypto.Signer: a card's key through winsign, or a software key
+	Chain:  chain,            // signing certificate first, then its issuers
+	Reason: "I agree",
+	OCSP:   answers,          // optional: from xfa.FetchOCSP
+	Timestamp: xfa.TimestampAuthority(url, nil), // optional
+})
 ```
 
-`Sign` would save any pending values first. Then it would check the field's filter, lock its manifest, reserve the hole, hash the byte ranges, build the CMS around the signer, and fill the hole. Signers live in their own packages (`sign/windows`, `sign/pkcs11`), so programs that don't sign don't link them.
+| Step | What happens |
+|---|---|
+| Check | The field is a signature field and isn't signed. The certificate is valid now and is for signing, and it belongs to the signer's key. |
+| Field | A static form's existing AcroForm field gets the signature and an appearance ("Digitally signed by DOE, JANE A" and the time). A dynamic form gets a new AcroForm field named by the SOM path, one level per segment, with an invisible widget on the first page. |
+| Update | One incremental update holds the new values (if any), the field, the AcroForm with `/SigFlags 3`, and the signature dictionary with its holes. Encrypted forms get their strings and streams encrypted, except `/Contents`. |
+| Sign | SHA-256 over the byte ranges (SHA-384 for P-384 keys), then a detached CMS: content type, message digest, signing time, optionally signing-certificate-v2 (CAdES), Adobe's revocation archive with the OCSP answers, and an RFC 3161 timestamp on the signature value. |
+| After | The form reopens from the signed bytes. `SignatureFields` reports the signer and time, the manifest's fields refuse new values (`ErrLocked`), and the layout shows the signature in the field. Later saves go after the signature. |
 
-## How it would be checked
+Programs that serve the live form can let people sign from the page: `HandlerOptions.Sign` gives the signer for a click on a signature field, and the signed PDF goes to `Save`.
 
-- The signed bytes outside `/Contents` match the unsigned update exactly, and `/ByteRange` covers the whole file except the hole.
-- The CMS verifies with Go's own code, `openssl cms -verify`, and pdfsig (poppler), and Acrobat shows the signature as valid. Acrobat is the check that matters.
-- Changing one byte anywhere in the covered stretches breaks the signature.
-- Encrypted forms: the signature dictionary's `/Contents` stays clear, and the rest of the update decrypts.
-- Card tests run only where a card is present. Software keys, generated in the test, cover the rest.
+**The Windows certificate store** is reached through package `winsign`, with no cgo. `winsign.SigningCertificates()` lists the certificates that have a private key and are for signing. On a CAC that leaves the Digital Signature certificate: the authentication certificate (client authentication and smart card logon only) and the encryption certificate are left out. `Cert.Signer()` opens the key through CNG, and Windows asks for the PIN when the signature is made. The chain is built from what Windows has installed, and nothing is fetched. On a computer without the issuing CAs installed, `xfa.CompleteChain` fetches them from the certificate's issuer URL, so the signature carries the whole chain.
+
+The command line does the same: `xfa certs` lists the certificates, `xfa sigs form.pdf` lists the signature fields, and `xfa sign [-cert N] [-reason ...] [-tsa URL] [-ocsp] form.pdf field out.pdf` signs, fetching missing issuers unless `-fetch-issuers=false`. Off Windows, `-key` and `-chain` take PEM files.
+
+## How it's checked
+
+- The tests sign with RSA and ECDSA (P-384) keys, as adbe.pkcs7.detached and CAdES. The byte range covers the whole file except the hole, and poppler's pdfsig reports "Signature is Valid" and "Total document signed".
+- The CMS verifies with `openssl cms -verify`, and a changed byte fails it.
+- With `GOXFA_FORMS` set, the tests fill and sign one signature field in each real form, encrypted and not, dynamic and static, with and without Reader usage rights. Each signed file passes qpdf's check and pdfsig, and pdf.js opens the signed dynamic forms.
+- Timestamps and OCSP are tested against a fake authority and responder.
+
+## What's left
+
+- **Acrobat.** Nothing here has been checked in Acrobat yet. The two questions are whether Acrobat shows a dynamic form's signature in the XFA field (it should, by the SOM name) and whether it reports the signature valid. pdfsig and the byte-range checks say the signature itself is sound.
+- **The Windows signer on a real card.** On a Windows computer with a CAC inserted, `winsign` finds the card's certificates and picks out the signature certificate, leaving out the authentication, card-authentication and encryption ones. Signing with the card (the PIN prompt and the CNG call) hasn't run yet.
+- **Locks in the PDF.** Manifests are enforced inside goxfa only. Writing `/Lock` and FieldMDP needs checking against what Acrobat writes for XFA forms.
+- **Filters and certification.** The template's `<filter>` and `<mdp>` aren't read.
+- **macOS and Linux cards.** PKCS #11 through OpenSC, loaded with purego, is the plan. Any `crypto.Signer` works in the meantime.
+- **Long-term validation after signing.** A `/DSS` added in a later update isn't written. Embedding OCSP answers at signing time covers most needs.

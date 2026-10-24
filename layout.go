@@ -80,8 +80,9 @@ type FieldBox struct {
 	Mark     string   `json:"mark,omitempty"`  // check boxes: check, circle, cross, diamond, square, star
 	Shape    string   `json:"shape,omitempty"` // check boxes: square or round
 	Tip      string   `json:"tip,omitempty"`
-	Page     string   `json:"page,omitempty"` // "page" or "pages": filled with the page number or count
-	ISO      string   `json:"iso,omitempty"`  // dates: the value as YYYY-MM-DD, when it reads as a date
+	Page     string   `json:"page,omitempty"`   // "page" or "pages": filled with the page number or count
+	ISO      string   `json:"iso,omitempty"`    // dates: the value as YYYY-MM-DD, when it reads as a date
+	Signed   bool     `json:"signed,omitempty"` // signature fields: signed; Display says by whom
 }
 
 type brk struct {
@@ -1025,6 +1026,9 @@ func (L *layouter) fieldBox(in *Inst, availW, forceW, forceH float64) *lbox {
 	case "readOnly", "protected", "nonInteractive":
 		fb.ReadOnly = true
 	}
+	if _, ok := L.f.locked()[in.SOM]; ok {
+		fb.ReadOnly = true
+	}
 	if pageNumberScript(t) != "" {
 		fb.Page = pageNumberScript(t)
 		fb.ReadOnly = true
@@ -1117,6 +1121,31 @@ func (L *layouter) fieldBox(in *Inst, availW, forceW, forceH float64) *lbox {
 			vt := valueText(iw)
 			lines = vt.lines
 			dy := valign(p.vAlign, ih, vt.h)
+			for i := range lines {
+				lines[i].Y = round2(lines[i].Y + dy)
+			}
+		}
+	}
+	if ui == "signature" {
+		if sig, ok := L.f.pdfSigs()[in.SOM]; ok {
+			// a signed field shows who signed it and when
+			fb.ReadOnly = true
+			fb.Signed = true
+			name := sig.name
+			if name == "" {
+				name = "unknown signer"
+			}
+			txt := "Digitally signed by " + name
+			if !sig.time.IsZero() {
+				txt += "\nDate: " + sig.time.Format("2006.01.02 15:04:05 -07'00'")
+			}
+			fb.Display = txt
+			sf := fnt
+			sf.Size = min(max(ih/2.8, 5), 9)
+			sf.Bold, sf.Italic, sf.Underline = false, false, false
+			vt := layoutText(plainParagraphs(txt, sf, para{}), iw, true, &L.fonts)
+			lines = vt.lines
+			dy := valign("middle", ih, vt.h)
 			for i := range lines {
 				lines[i].Y = round2(lines[i].Y + dy)
 			}

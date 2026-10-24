@@ -384,7 +384,7 @@ func (pe *pdfEmitter) field(it Item, Y func(float64) float64) {
 				num(cx-s*0.3), num(cy+s*0.02), num(cx-s*0.08), num(cy-s*0.24), num(cx+s*0.32), num(cy+s*0.28))
 		}
 		return
-	case "signature", "button", "image":
+	case "button", "image":
 		return
 	}
 	if len(it.Lines) == 0 {

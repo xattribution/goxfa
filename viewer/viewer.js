@@ -170,7 +170,17 @@
         break;
       case "signature":
         node = h("div", "xfa-signature", ctx.layer);
-        node.textContent = opts.signatureText || "Sign in Acrobat";
+        if (f.signed) {
+          node.classList.add("xfa-signed");
+          node.textContent = f.display;
+        } else {
+          node.textContent = opts.signatureText || "Sign in Acrobat";
+          if (opts.onSign) {
+            node.setAttribute("role", "button");
+            node.tabIndex = 0;
+            node.onclick = () => opts.onSign(f.som, f);
+          }
+        }
         break;
       case "button":
         node = h("div", "xfa-button", ctx.layer);

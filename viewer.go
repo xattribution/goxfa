@@ -27,6 +27,9 @@ type ViewerOptions struct {
 	SignatureText string
 	// NoSave leaves out the Save button.
 	NoSave bool
+	// CanSign makes unsigned signature fields buttons that post
+	// {"SOM": path} to Endpoint+"/sign" and expect the new layout back.
+	CanSign bool
 }
 
 // ViewerJS and ViewerCSS are the viewer's script and style sheet, for
@@ -68,7 +71,21 @@ const status = document.getElementById("xfa-status");
 const say = (t) => { status.textContent = t; };
 let busy = Promise.resolve();
 const opts = {
-  signatureText: cfg.SignatureText,
+  signatureText: cfg.SignatureText || (cfg.CanSign ? "Sign" : ""),
+  onSign: cfg.CanSign && cfg.Endpoint ? (som) => {
+    busy = busy.then(async () => {
+      say("Signing");
+      try {
+        const r = await fetch(cfg.Endpoint + "/sign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ SOM: som }) });
+        if (!r.ok) { say((await r.text()).trim()); return; }
+        doc = await r.json();
+        const y = window.scrollY;
+        XFAViewer.render(root, doc, opts);
+        window.scrollTo(0, y);
+        say("Signed and saved");
+      } catch (e) { say("Couldn't reach the program: " + e.message); }
+    });
+  } : null,
   onChange(som, value) {
     if (!cfg.Endpoint) { say("Changes stay in this page"); return; }
     busy = busy.then(async () => {
