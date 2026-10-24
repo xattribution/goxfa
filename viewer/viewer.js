@@ -182,9 +182,10 @@
       default: {
         node = h("input", "xfa-input", ctx.layer);
         node.type = f.kind === "password" ? "password" : "text";
-        if (f.kind === "date" && /^\d{4}-\d{2}-\d{2}$/.test(f.value || "") || (f.kind === "date" && !f.value)) {
+        if (f.kind === "date" && (f.iso || !f.value)) {
+          // a date picker; the form stores the date its own way
           node.type = "date";
-          node.value = f.value || "";
+          node.value = f.iso || "";
         } else {
           node.value = f.display || f.value || "";
         }

@@ -81,6 +81,7 @@ type FieldBox struct {
 	Shape    string   `json:"shape,omitempty"` // check boxes: square or round
 	Tip      string   `json:"tip,omitempty"`
 	Page     string   `json:"page,omitempty"` // "page" or "pages": filled with the page number or count
+	ISO      string   `json:"iso,omitempty"`  // dates: the value as YYYY-MM-DD, when it reads as a date
 }
 
 type brk struct {
@@ -188,6 +189,19 @@ func extentOf(t *Node) extent {
 	e.minH, e.maxH = attrMeasure(t, "minH", 0), attrMeasure(t, "maxH", 0)
 	e.x, e.y = attrMeasure(t, "x", 0), attrMeasure(t, "y", 0)
 	return e
+}
+
+// flowedIn says whether an instance's containing subform flows its
+// content (any layout but position).
+func flowedIn(in *Inst) bool {
+	for p := in.Parent; p != nil; p = p.Parent {
+		if p.Kind == "subformSet" {
+			continue
+		}
+		l := p.T.Attr("layout")
+		return p.Kind == "subform" && l != "" && l != "position"
+	}
+	return false
 }
 
 // growW is a growable width clamped to min and max.
@@ -300,6 +314,11 @@ func visibleKids(in *Inst) []*Inst {
 func (L *layouter) containerBox(in *Inst, availW, forceW, forceH float64) *lbox {
 	t := in.T
 	e := extentOf(t)
+	if in.Kind == "subform" && flowedIn(in) {
+		// A subform in a flowed container takes its content's size:
+		// Acrobat applies minimums and maximums only to positioned ones.
+		e.minW, e.maxW, e.minH, e.maxH = 0, 0, 0, 0
+	}
 	m := marginOf(t)
 	if in.Kind == "area" {
 		m = margins{}
@@ -1056,6 +1075,13 @@ func (L *layouter) fieldBox(in *Inst, availW, forceW, forceH float64) *lbox {
 		}
 	case "dateTimeEdit":
 		fb.Kind = "date"
+		d, ok := parseDate(in.raw)
+		if !ok && in.raw != "" {
+			d, ok = parsePicture(bindPicture(t), in.raw)
+		}
+		if ok {
+			fb.ISO = d.Format("2006-01-02")
+		}
 	case "numericEdit":
 		fb.Kind = "number"
 	case "passwordEdit":
