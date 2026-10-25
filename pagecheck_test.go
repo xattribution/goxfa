@@ -5,24 +5,15 @@ import (
 	"strings"
 )
 
-// Page numbers in the form packet.
+// Page numbers as Acrobat saves them, for TestRealForms: Acrobat keeps the
+// "Page n of m" fields of master pages (bound to nothing, filled by
+// layout:ready scripts) in the form packet, a pageArea element per page
+// under the root subform's pageSet. Where a real form's form packet holds
+// them for as many pages as goxfa lays out, goxfa's master pages and page
+// numbers must be the same.
 //
-// The form packet keeps what can't be got back from the template and the
-// data, such as the values of fields bound to nothing. The "Page 1 of 3"
-// fields on master pages are such fields: their scripts fill them in when
-// Acrobat lays the pages out (this.rawValue = xfa.layout.page(this)), and
-// Acrobat saves the values in the form packet, one pageArea element per
-// page under the root subform's pageSet:
-//
-//	<pageSet><pageArea name="Page1"><field name="CurrentPage"><value>
-//	<float>1.00000000</float></value></field>...</pageArea>...</pageSet>
-//
-// Acrobat compares a signed form's fields with those in the signed
-// revision. When the signed form packet lacks the page numbers, the values
-// Acrobat's layout gives them show as "Form Fields Filled In" after the
-// signature, with "unsigned changes after the last signature" across the
-// top, even though nothing changed. So goxfa writes them as Acrobat does
-// when it saves or signs (pageState), from its own layout.
+// goxfa doesn't write these when it saves or signs: Acrobat ignored them.
+// See docs/SIGNING.md, "Page numbers after a signature".
 
 // pageState is the form packet with the page number fields set for the
 // current layout, or nil when there's nothing to change: no form packet,
