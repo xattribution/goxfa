@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"image"
 	"regexp"
 	"strconv"
 	"strings"
@@ -47,6 +48,17 @@ type SignOptions struct {
 	// Timestamp, when set, gets an RFC 3161 timestamp token for the
 	// signature value. TimestampAuthority makes one for a URL.
 	Timestamp func(signature []byte) ([]byte, error)
+
+	// Graphic, when set, is drawn in the signature's appearance: on the
+	// left half with the text on the right, as Acrobat lays out a
+	// signature with a graphic, or across the whole box when Text is
+	// empty. It keeps its proportions, and transparent pixels stay
+	// clear. At most 4096 pixels on a side.
+	Graphic image.Image
+	// Text replaces the appearance's lines of text. Nil draws "Digitally
+	// signed by NAME" and the date; an empty, non-nil slice draws none.
+	// Set Time to know the date the signature will carry.
+	Text []string
 }
 
 // SignatureField is a signature field and what's in it.
@@ -319,6 +331,9 @@ func (f *Form) Sign(o SignOptions) ([]byte, error) {
 	}
 	if err := checkSigningCert(o.Chain[0]); err != nil {
 		return nil, err
+	}
+	if g := o.Graphic; g != nil && (g.Bounds().Dx() <= 0 || g.Bounds().Dy() <= 0 || g.Bounds().Dx() > maxGraphic || g.Bounds().Dy() > maxGraphic) {
+		return nil, errors.New("xfa: the signature graphic must be 1 to 4096 pixels on a side")
 	}
 	when := o.Time
 	if when.IsZero() {
@@ -676,38 +691,72 @@ func (f *Form) fieldBoxSize(som string) (w, h float64) {
 	return
 }
 
-// appearanceStream draws "Digitally signed by NAME" and the time in a
-// w×h box.
+// appearanceStream draws the signature's appearance in a w×h box: the
+// text ("Digitally signed by NAME" and the time, unless o.Text says
+// otherwise) and, with o.Graphic, the graphic on its left.
 func appearanceStream(w, h float64, o SignOptions, when time.Time, alloc func() int) []updObj {
-	name := o.Name
-	if name == "" {
-		name = displayName(o.Chain[0])
+	lines := o.Text
+	if lines == nil {
+		name := o.Name
+		if name == "" {
+			name = displayName(o.Chain[0])
+		}
+		lines = []string{"Digitally signed by " + name, "Date: " + when.Format("2006.01.02 15:04:05 -07'00'")}
 	}
-	lines := []string{"Digitally signed by " + name, "Date: " + when.Format("2006.01.02 15:04:05 -07'00'")}
-	size := min(h/2.6, 9)
-	fc := faceFor(Font{Typeface: "Helvetica", Size: size})
-	for _, l := range lines {
-		if lw := fc.width(l); lw > w-4 {
-			size = min(size, size*(w-4)/lw)
+	const pad = 2.0
+	var c strings.Builder
+	n := alloc()
+	objs := []updObj{{num: n}}
+	resources := types.Dict{}
+	tx, tw := pad, w-2*pad // where the text goes
+	if o.Graphic != nil {
+		gx, gw := pad, w-2*pad
+		if len(lines) > 0 {
+			gw = w/2 - 2*pad
+			tx, tw = w/2+pad, w/2-2*pad
+		}
+		if img, err := graphicObjects(o.Graphic, alloc); err == nil && gw > 1 && h > 2*pad+1 {
+			b := o.Graphic.Bounds()
+			iw, ih := float64(b.Dx()), float64(b.Dy())
+			bh := h - 2*pad
+			scale := min(gw/iw, bh/ih)
+			dw, dh := iw*scale, ih*scale
+			dx, dy := gx+(gw-dw)/2, pad+(bh-dh)/2
+			fmt.Fprintf(&c, "q %s 0 0 %s %s %s cm /Im0 Do Q\n", num2(dw), num2(dh), num2(dx), num2(dy))
+			resources["XObject"] = types.Dict{"Im0": *types.NewIndirectRef(img[0].num, 0)}
+			objs = append(objs, img...)
 		}
 	}
-	var c strings.Builder
-	c.WriteString("BT /Helv " + strconv.FormatFloat(size, 'f', 2, 64) + " Tf 0 g\n")
-	y := h/2 + size*0.15
-	for i, l := range lines {
-		fmt.Fprintf(&c, "1 0 0 1 2 %s Tm %s Tj\n", strconv.FormatFloat(y-float64(i)*size*1.2, 'f', 2, 64), pdfString(l))
-	}
-	c.WriteString("ET\n")
-	n := alloc()
-	return []updObj{{num: n, stream: []byte(c.String()), dict: types.Dict{
-		"Type":    types.Name("XObject"),
-		"Subtype": types.Name("Form"),
-		"BBox":    types.Array{types.Integer(0), types.Integer(0), types.Float(w), types.Float(h)},
-		"Resources": types.Dict{"Font": types.Dict{"Helv": types.Dict{
+	if len(lines) > 0 && tw > 1 {
+		size := min(h/(1.2*float64(len(lines))+0.4), 9)
+		fc := faceFor(Font{Typeface: "Helvetica", Size: size})
+		for _, l := range lines {
+			if lw := fc.width(l); lw > tw {
+				size = min(size, size*tw/lw)
+			}
+		}
+		c.WriteString("BT /Helv " + num2(size) + " Tf 0 g\n")
+		// the block of lines centered top to bottom
+		y := (h+1.2*size*float64(len(lines)))/2 - 0.95*size
+		for i, l := range lines {
+			fmt.Fprintf(&c, "1 0 0 1 %s %s Tm %s Tj\n", num2(tx), num2(y-float64(i)*size*1.2), pdfString(l))
+		}
+		c.WriteString("ET\n")
+		resources["Font"] = types.Dict{"Helv": types.Dict{
 			"Type": types.Name("Font"), "Subtype": types.Name("Type1"), "BaseFont": types.Name("Helvetica"), "Encoding": types.Name("WinAnsiEncoding"),
-		}}},
-	}}}
+		}}
+	}
+	objs[0].stream = []byte(c.String())
+	objs[0].dict = types.Dict{
+		"Type":      types.Name("XObject"),
+		"Subtype":   types.Name("Form"),
+		"BBox":      types.Array{types.Integer(0), types.Integer(0), types.Float(w), types.Float(h)},
+		"Resources": resources,
+	}
+	return objs
 }
+
+func num2(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
 
 // firstPage is the first leaf of the page tree.
 func firstPage(x *model.XRefTable, root types.Dict) *types.IndirectRef {

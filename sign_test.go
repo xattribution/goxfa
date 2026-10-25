@@ -2,6 +2,7 @@ package xfa
 
 import (
 	"bytes"
+	"compress/zlib"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -10,6 +11,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"image"
+	ic "image/color"
 	"io"
 	"math/big"
 	"net/http"
@@ -197,5 +200,83 @@ func TestHandlerSigns(t *testing.T) {
 	}
 	if out := pdfsig(t, saved); out != "" && !strings.Contains(out, "Signature is Valid") {
 		t.Errorf("pdfsig:\n%s", out)
+	}
+}
+
+// TestSignGraphic signs with a graphic beside custom text, and with a
+// graphic alone: the appearance carries the picture and its transparency,
+// the text replaces the default lines, and the signature stays valid.
+func TestSignGraphic(t *testing.T) {
+	key := must(ecdsa.GenerateKey(elliptic.P256(), rand.Reader))
+	g := image.NewNRGBA(image.Rect(0, 0, 40, 20))
+	for y := 0; y < 20; y++ {
+		for x := 0; x < 40; x++ {
+			if x < 20 {
+				g.SetNRGBA(x, y, ic.NRGBA{0, 51, 102, 255})
+			}
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		text []string
+		want []string
+		not  []string
+	}{
+		{"beside text", []string{"Digitally signed by DOE, JANE A", "Date: 2026.10.25"}, []string{"/Subtype /Image", "/SMask", "/Im0 Do", "(Digitally signed by DOE, JANE A) Tj"}, []string{"(Date: 2026.10.25 "}},
+		{"alone", []string{}, []string{"/Subtype /Image", "/Im0 Do"}, []string{" Tj"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, orig := openSample(t)
+			signed, err := f.Sign(SignOptions{Field: "form1[0].Page1[0].Sig[0]", Signer: key, Chain: testSigner(t, key), Graphic: g, Text: tc.text})
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkByteRange(t, signed)
+			added := inflateAll(t, signed[len(orig):])
+			for _, w := range tc.want {
+				if !strings.Contains(added, w) {
+					t.Errorf("the appearance lacks %q", w)
+				}
+			}
+			for _, w := range tc.not {
+				if strings.Contains(added, w) {
+					t.Errorf("the appearance has %q", w)
+				}
+			}
+			if out := pdfsig(t, signed); out != "" && !strings.Contains(out, "Signature is Valid") {
+				t.Errorf("pdfsig:\n%s", out)
+			}
+		})
+	}
+	f, _ := openSample(t)
+	if _, err := f.Sign(SignOptions{Field: "form1[0].Page1[0].Sig[0]", Signer: key, Chain: testSigner(t, key), Graphic: image.NewNRGBA(image.Rect(0, 0, maxGraphic+1, 1))}); err == nil {
+		t.Error("a graphic too large should be refused")
+	}
+}
+
+// inflateAll is the appended revision with each stream inflated, so a
+// test can look for what the streams draw.
+func inflateAll(t *testing.T, b []byte) string {
+	t.Helper()
+	var out strings.Builder
+	for {
+		i := bytes.Index(b, []byte("stream\n"))
+		if i < 0 {
+			out.Write(b)
+			return out.String()
+		}
+		out.Write(b[:i+7])
+		b = b[i+7:]
+		j := bytes.Index(b, []byte("\nendstream"))
+		if j < 0 {
+			return out.String()
+		}
+		if r, err := zlib.NewReader(bytes.NewReader(b[:j])); err == nil {
+			d, _ := io.ReadAll(r)
+			out.Write(d)
+		} else {
+			out.Write(b[:j])
+		}
+		b = b[j:]
 	}
 }

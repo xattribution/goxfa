@@ -173,6 +173,9 @@
         if (f.signed) {
           node.classList.add("xfa-signed");
           node.textContent = f.display;
+          // the lines fit the box, however short the field is
+          const n = Math.max(1, String(f.display || "").split("\n").length);
+          node.style.fontSize = Math.max(4, Math.min(10, (it.h * PX - 2) / (n * 1.2))) + "px";
         } else {
           node.textContent = opts.signatureText || "Sign in Acrobat";
           if (opts.onSign) {
