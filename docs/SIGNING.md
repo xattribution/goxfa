@@ -52,7 +52,7 @@ The checksum on the form packet is what decides it. Acrobat uses what the form p
 - the same, with the checksum taken off;
 - goxfa wrote them with no value changed, leaving the template and datasets as they were.
 
-So goxfa doesn't write them. Signing in Acrobat, or a later signature added in Acrobat, saves them with a checksum that matches. TestRealForms still checks goxfa's master pages and page numbers against the ones Acrobat saved (pagecheck_test.go).
+So goxfa doesn't write them. Signing in Acrobat, or a later signature added in Acrobat, saves them with a checksum that matches. `Form.PageNumbered` says whether a form has such fields, so an application can send those forms to Acrobat to sign, or warn before it signs one. TestRealForms still checks goxfa's master pages and page numbers against the ones Acrobat saved (pagecheck_test.go).
 
 **Reader usage rights.** Forms enabled for Reader carry a usage-rights signature (`/Perms /UR3`). An incremental update keeps it intact, which is why goxfa never rewrites the file. Acrobat checks that the changes after a UR3 signature are ones it allows. Filling fields and adding signatures are allowed.
 
