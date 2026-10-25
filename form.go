@@ -178,7 +178,12 @@ func (f *Form) Save() ([]byte, error) {
 	for _, p := range f.pdf.packets {
 		if p.name == "datasets" {
 			gen := p.ref.GenerationNumber.Value()
-			return appendUpdate(f.pdf.data, f.pdf.x, streamUpdates(map[int]newStream{p.ref.ObjectNumber.Value(): {gen: gen, content: f.dsDoc.Bytes()}}))
+			ups := map[int]newStream{p.ref.ObjectNumber.Value(): {gen: gen, content: f.dsDoc.Bytes()}}
+			// The page numbers go in the form packet, as Acrobat saves them (pagestate.go).
+			if fp, b := f.pageState(); fp != nil && fp.ref.ObjectNumber.Value() != p.ref.ObjectNumber.Value() {
+				ups[fp.ref.ObjectNumber.Value()] = newStream{gen: fp.ref.GenerationNumber.Value(), content: b}
+			}
+			return appendUpdate(f.pdf.data, f.pdf.x, streamUpdates(ups))
 		}
 	}
 	return nil, errors.New("xfa: the form has no datasets packet to write the values into")

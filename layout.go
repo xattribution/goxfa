@@ -15,6 +15,8 @@ type Doc struct {
 	Pages   []Page `json:"pages"`
 	Fonts   []Font `json:"fonts"`
 	Dynamic bool   `json:"dynamic"`
+
+	areas []*Inst // each page's master page (pagestate.go)
 }
 
 // Page is one page.
@@ -1253,8 +1255,14 @@ func (L *layouter) pageAreas() []*pageAreaInfo {
 					info.w, info.h = s, l
 				}
 			}
-			if o := pa.T.Child("occur"); o != nil && o.HasAttr("max") {
-				info.maxN = atoiDef(o.Attr("max"), -1)
+			// An occur element's max is 1 unless it says otherwise, as in
+			// Acrobat (a first page whose <occur min="1"/> gives way to the
+			// next master page); with no occur element a page area repeats.
+			if o := pa.T.Child("occur"); o != nil {
+				info.maxN = 1
+				if o.HasAttr("max") {
+					info.maxN = atoiDef(o.Attr("max"), -1)
+				}
 			}
 			for _, ca := range pa.T.Children("contentArea") {
 				info.cas = append(info.cas, contentArea{
@@ -1340,6 +1348,7 @@ func (pg *pager) newPage(target string) {
 	a.used++
 	pg.cur, pg.ca, pg.used, pg.placed = a, 0, 0, false
 	pg.doc.Pages = append(pg.doc.Pages, Page{W: round2(a.w), H: round2(a.h)})
+	pg.doc.areas = append(pg.doc.areas, a.in)
 	pg.page = &pg.doc.Pages[len(pg.doc.Pages)-1]
 	for _, mb := range a.boxes {
 		pg.emit(mb, mb.x, mb.y)

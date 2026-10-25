@@ -353,6 +353,11 @@ func (f *Form) Sign(o SignOptions) ([]byte, error) {
 			}
 		}
 	}
+	// and so do the page numbers, which Acrobat would otherwise count as
+	// filled in after the signature (pagestate.go)
+	if fp, b := f.pageState(); fp != nil {
+		objs = append(objs, updObj{num: fp.ref.ObjectNumber.Value(), gen: fp.ref.GenerationNumber.Value(), stream: b})
+	}
 
 	// the AcroForm, which may sit inside the catalog
 	root, err := x.Catalog()

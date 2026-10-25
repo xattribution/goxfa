@@ -1,0 +1,229 @@
+package xfa
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Page numbers in the form packet.
+//
+// The form packet keeps what can't be got back from the template and the
+// data, such as the values of fields bound to nothing. The "Page 1 of 3"
+// fields on master pages are such fields: their scripts fill them in when
+// Acrobat lays the pages out (this.rawValue = xfa.layout.page(this)), and
+// Acrobat saves the values in the form packet, one pageArea element per
+// page under the root subform's pageSet:
+//
+//	<pageSet><pageArea name="Page1"><field name="CurrentPage"><value>
+//	<float>1.00000000</float></value></field>...</pageArea>...</pageSet>
+//
+// Acrobat compares a signed form's fields with those in the signed
+// revision. When the signed form packet lacks the page numbers, the values
+// Acrobat's layout gives them show as "Form Fields Filled In" after the
+// signature, with "unsigned changes after the last signature" across the
+// top, even though nothing changed. So goxfa writes them as Acrobat does
+// when it saves or signs (pageState), from its own layout.
+
+// pageState is the form packet with the page number fields set for the
+// current layout, or nil when there's nothing to change: no form packet,
+// no page number fields, or the values are already there.
+func (f *Form) pageState() (*packet, []byte) {
+	if f.pdf == nil || f.pdf.whole || f.root == nil {
+		return nil, nil
+	}
+	var fp *packet
+	for i := range f.pdf.packets {
+		if f.pdf.packets[i].name == "form" {
+			fp = &f.pdf.packets[i]
+		}
+	}
+	if fp == nil {
+		return nil, nil
+	}
+	areas := f.pageAreasLaidOut()
+	if len(areas) == 0 {
+		return nil, nil
+	}
+	has := false
+	for _, pa := range areas {
+		if pa != nil && len(pageNumberFields(pa, nil)) > 0 {
+			has = true
+			break
+		}
+	}
+	if !has {
+		return nil, nil
+	}
+	doc, err := ParseXML(fp.raw)
+	if err != nil {
+		return nil, nil
+	}
+	form := doc.FirstElem()
+	if form == nil || form.Local != "form" {
+		return nil, nil
+	}
+	root := form.Child("subform")
+	if root == nil {
+		// A form packet that keeps nothing yet: the root subform, holding
+		// only the pages.
+		root = form.Append(NewElem("subform"))
+		if f.root.Name != "" {
+			root.SetAttr("name", f.root.Name)
+		}
+	}
+	old := root.Child("pageSet")
+	var had []*Node
+	if old != nil {
+		had = old.Children("pageArea")
+	}
+	// The pages Acrobat laid out the same way keep their elements as they
+	// are, so a form packet that's already right isn't written again.
+	same := old != nil && len(had) == len(areas)
+	for i, pa := range areas {
+		if same && (pa == nil || had[i].Attr("name") != pa.Name) {
+			same = false
+		}
+	}
+	set, changed := old, false
+	if !same {
+		set, changed = NewElem("pageSet"), true
+	}
+	for i, pa := range areas {
+		if pa == nil {
+			continue
+		}
+		// What Acrobat kept for this page (other fields' state) stays.
+		var el *Node
+		if i < len(had) && had[i].Attr("name") == pa.Name {
+			el = had[i]
+		} else {
+			el = NewElem("pageArea")
+			if pa.Name != "" {
+				el.SetAttr("name", pa.Name)
+			}
+		}
+		if !same {
+			set.Append(el)
+		}
+		for _, pf := range pageNumberFields(pa, nil) {
+			v := i + 1
+			if pageNumberScript(pf.field.T) == "pages" {
+				v = len(areas)
+			}
+			if setPagedValue(el, pf, v) {
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return nil, nil
+	}
+	if !same {
+		if old != nil {
+			for k, n := range root.Kids {
+				if n == old {
+					set.Parent = root
+					root.Kids[k] = set
+				}
+			}
+		} else {
+			root.Append(set)
+		}
+	}
+	return fp, doc.Bytes()
+}
+
+// pageAreasLaidOut is the master page each page of the current layout
+// uses, in order (nil for a page made with none).
+func (f *Form) pageAreasLaidOut() (areas []*Inst) {
+	defer func() {
+		if recover() != nil {
+			areas = nil
+		}
+	}()
+	L := &layouter{f: f}
+	doc := &Doc{Dynamic: f.dynamic}
+	L.paginate(doc)
+	return doc.areas
+}
+
+// pagedField is a page number field and the containers between its page
+// area and it.
+type pagedField struct {
+	path  []*Inst
+	field *Inst
+}
+
+// pageNumberFields lists the page number fields under a page area.
+func pageNumberFields(in *Inst, path []*Inst) []pagedField {
+	var out []pagedField
+	for _, k := range in.Kids {
+		switch k.Kind {
+		case "field":
+			if pageNumberScript(k.T) != "" {
+				out = append(out, pagedField{path: append([]*Inst(nil), path...), field: k})
+			}
+		case "subform", "area", "subformSet", "exclGroup":
+			out = append(out, pageNumberFields(k, append(path, k))...)
+		}
+	}
+	return out
+}
+
+// setPagedValue writes a page number field's value under a page area's
+// element, making the containers on the way as Acrobat names them, and
+// says whether anything changed.
+func setPagedValue(el *Node, pf pagedField, v int) bool {
+	cur, made := el, false
+	for _, c := range pf.path {
+		var m bool
+		cur, m = childNamed(cur, c.Kind, c.Name)
+		made = made || m
+	}
+	fe, m := childNamed(cur, "field", pf.field.Name)
+	made = made || m
+	kind, text := "float", fmt.Sprintf("%d.00000000", v)
+	if vt := pf.field.T.Child("value"); vt != nil {
+		if t := vt.FirstElem(); t != nil {
+			switch t.Local {
+			case "integer":
+				kind, text = "integer", fmt.Sprint(v)
+			case "decimal":
+				kind, text = "decimal", fmt.Sprint(v)
+			case "text":
+				kind, text = "text", fmt.Sprint(v)
+			}
+		}
+	}
+	if kind == "float" {
+		if ui, _ := uiKind(pf.field.T); ui == "textEdit" {
+			kind, text = "text", fmt.Sprint(v)
+		}
+	}
+	if vals := fe.Children("value"); len(vals) == 1 {
+		if t := vals[0].FirstElem(); t != nil && t.Local == kind && strings.TrimSpace(t.TextContent()) == text {
+			return made
+		}
+	}
+	for _, k := range fe.Children("value") {
+		fe.Remove(k)
+	}
+	val := fe.Append(NewElem("value"))
+	val.Append(NewElem(kind)).SetText(text)
+	return true
+}
+
+// childNamed is n's first child element of that kind and name, made at the
+// end when there's none (made says so).
+func childNamed(n *Node, kind, name string) (c *Node, made bool) {
+	for _, k := range n.Children(kind) {
+		if k.Attr("name") == name {
+			return k, false
+		}
+	}
+	c = NewElem(kind)
+	if name != "" {
+		c.SetAttr("name", name)
+	}
+	return n.Append(c), true
+}

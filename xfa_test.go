@@ -392,6 +392,16 @@ func TestRealForms(t *testing.T) {
 			if _, err := Flatten(doc); err != nil {
 				t.Fatal(err)
 			}
+			// Where Acrobat saved the page numbers for as many pages as
+			// goxfa lays out (a form filled since may run longer), goxfa's
+			// master pages and numbers are the same (pagestate.go).
+			for _, pk := range f.pdf.packets {
+				if pk.name == "form" && bytes.Contains(pk.raw, []byte("<pageSet")) && bytes.Contains(pk.raw, []byte("CurrentPage")) && bytes.Count(pk.raw, []byte("<pageArea")) == len(doc.Pages) {
+					if fp, b := f.pageState(); fp != nil {
+						t.Errorf("page numbers differ from Acrobat's:\n%s", b[bytes.Index(b, []byte("<pageSet")):])
+					}
+				}
+			}
 			var som string
 			for _, fd := range f.Fields() {
 				if (fd.Kind == "text" || fd.Kind == "multiline") && fd.Bound && !fd.ReadOnly && !fd.Hidden {
