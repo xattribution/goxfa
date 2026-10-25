@@ -701,7 +701,7 @@ func appearanceStream(w, h float64, o SignOptions, when time.Time, alloc func() 
 		if name == "" {
 			name = displayName(o.Chain[0])
 		}
-		lines = []string{"Digitally signed by " + name, "Date: " + when.Format("2006.01.02 15:04:05 -07'00'")}
+		lines = []string{"Digitally signed by " + name, "Date: " + appearanceDate(when)}
 	}
 	const pad = 2.0
 	var c strings.Builder
@@ -728,11 +728,13 @@ func appearanceStream(w, h float64, o SignOptions, when time.Time, alloc func() 
 		}
 	}
 	if len(lines) > 0 && tw > 1 {
-		size := min(h/(1.2*float64(len(lines))+0.4), 9)
-		fc := faceFor(Font{Typeface: "Helvetica", Size: size})
+		base := min(h/(1.2*float64(len(lines))+0.4), 9)
+		fc := faceFor(Font{Typeface: "Helvetica", Size: base})
+		size := base
 		for _, l := range lines {
+			// the widest line sets the size; widths are at the base size
 			if lw := fc.width(l); lw > tw {
-				size = min(size, size*tw/lw)
+				size = min(size, base*tw/lw)
 			}
 		}
 		c.WriteString("BT /Helv " + num2(size) + " Tf 0 g\n")
@@ -757,6 +759,17 @@ func appearanceStream(w, h float64, o SignOptions, when time.Time, alloc func() 
 }
 
 func num2(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
+
+// appearanceDate is the signing time as Acrobat shows it in a signature,
+// "2026.10.25 19:41:00 -10'00'", with the zone's own minutes (+05'30').
+func appearanceDate(t time.Time) string {
+	_, off := t.Zone()
+	sign := "+"
+	if off < 0 {
+		sign, off = "-", -off
+	}
+	return t.Format("2006.01.02 15:04:05 ") + fmt.Sprintf("%s%02d'%02d'", sign, off/3600, off%3600/60)
+}
 
 // firstPage is the first leaf of the page tree.
 func firstPage(x *model.XRefTable, root types.Dict) *types.IndirectRef {

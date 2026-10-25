@@ -280,3 +280,35 @@ func inflateAll(t *testing.T, b []byte) string {
 		b = b[j:]
 	}
 }
+
+// TestAppearanceText checks the default date line's zone minutes and that
+// the widest line alone sets the text size.
+func TestAppearanceText(t *testing.T) {
+	ist := time.Date(2026, 10, 25, 19, 41, 0, 0, time.FixedZone("", 5*3600+30*60))
+	if got := appearanceDate(ist); got != "2026.10.25 19:41:00 +05'30'" {
+		t.Errorf("date: %q", got)
+	}
+	hst := time.Date(2026, 10, 25, 19, 41, 0, 0, time.FixedZone("", -10*3600))
+	if got := appearanceDate(hst); got != "2026.10.25 19:41:00 -10'00'" {
+		t.Errorf("date: %q", got)
+	}
+	n := 0
+	alloc := func() int { n++; return n }
+	long := strings.Repeat("W", 60)
+	one := appearanceStream(100, 30, SignOptions{Text: []string{long}}, hst, alloc)
+	two := appearanceStream(100, 30, SignOptions{Text: []string{long, long + "W"}}, hst, alloc)
+	size := func(o []updObj) string {
+		m := regexp.MustCompile(`/Helv ([0-9.]+) Tf`).FindSubmatch(o[0].stream)
+		if m == nil {
+			t.Fatal("no text drawn")
+		}
+		return string(m[1])
+	}
+	// two lines: the base is smaller for the height, but the width rule
+	// dominates; the size is set by the widest line, not shrunk twice
+	f1, _ := strconv.ParseFloat(size(one), 64)
+	f2, _ := strconv.ParseFloat(size(two), 64)
+	if f2 < f1*60/61-0.02 {
+		t.Errorf("the second line shrank the text twice: %v then %v", f1, f2)
+	}
+}
