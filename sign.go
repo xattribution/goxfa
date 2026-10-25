@@ -794,3 +794,35 @@ func firstPage(x *model.XRefTable, root types.Dict) *types.IndirectRef {
 	}
 	return nil
 }
+
+// PageNumbered reports whether the form fills in page numbers itself: a
+// field bound to nothing, usually on a master page ("Page 1 of 3"), whose
+// script sets it to the page number or the page count as the pages are
+// laid out. Acrobat lists such fields under "Form Fields Filled In" after
+// a signature goxfa makes, though the signature stays valid, because it
+// fills them in when it opens the form and only trusts the values it saved
+// itself (docs/SIGNING.md, "Page numbers after a signature"). Signing such
+// a form in Acrobat avoids the note.
+func (f *Form) PageNumbered() bool {
+	var walk func(in *Inst, inPage bool) bool
+	walk = func(in *Inst, inPage bool) bool {
+		if in == nil {
+			return false
+		}
+		if in.Kind == "pageArea" {
+			inPage = true
+		}
+		if in.Kind == "field" && pageNumberScript(in.T) != "" {
+			if b := in.T.Child("bind"); inPage || (b != nil && b.Attr("match") == "none") {
+				return true
+			}
+		}
+		for _, k := range in.Kids {
+			if walk(k, inPage) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(f.root, false)
+}
