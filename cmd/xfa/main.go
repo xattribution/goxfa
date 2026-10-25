@@ -82,7 +82,7 @@ func main() {
 		for _, s := range f.SignatureFields() {
 			state := "not signed"
 			if s.Signed {
-				state = "signed by " + s.Signer + " on " + s.Time.Format("02 Jan 06 15:04")
+				state = "signed by " + s.Name + " on " + s.Time.Format("02 Jan 06 15:04")
 			}
 			fmt.Printf("%-70s %s\n", s.SOM, state)
 			if len(s.Locks) > 0 {

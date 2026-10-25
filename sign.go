@@ -55,9 +55,13 @@ type SignatureField struct {
 	Label  string `json:"label,omitempty"`
 	Signed bool   `json:"signed"`
 	// Signer is the signing certificate's common name, as the signature
-	// carries it (it is not verified here).
-	Signer string    `json:"signer,omitempty"`
-	Time   time.Time `json:"time,omitzero"`
+	// carries it (it is not verified here). On a CAC it ends in the
+	// holder's ID number; show Name instead.
+	Signer string `json:"signer,omitempty"`
+	// Name is the signer's name to show: the signature's /Name, or one
+	// made from the certificate (LAST, FIRST M, without an ID number).
+	Name string    `json:"name,omitempty"`
+	Time time.Time `json:"time,omitzero"`
 	// Locks are the fields this signature locks once it's signed: the
 	// field's manifest in the template.
 	Locks []string `json:"locks,omitempty"`
@@ -80,7 +84,7 @@ func (f *Form) SignatureFields() []SignatureField {
 		}
 		sf := SignatureField{SOM: in.SOM, Label: strings.TrimSpace(captionText(in.T)), Locks: f.manifest(in)}
 		if s, ok := signed[in.SOM]; ok {
-			sf.Signed, sf.Signer, sf.Time = true, s.signer, s.time
+			sf.Signed, sf.Signer, sf.Name, sf.Time = true, s.signer, s.name, s.time
 		}
 		out = append(out, sf)
 	}

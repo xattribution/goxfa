@@ -113,7 +113,7 @@ func TestSign(t *testing.T) {
 					sf = s
 				}
 			}
-			if !sf.Signed || sf.Signer != "DOE.JANE.A.1234567890" || len(sf.Locks) != 1 {
+			if !sf.Signed || sf.Signer != "DOE.JANE.A.1234567890" || sf.Name != "DOE, JANE A" || len(sf.Locks) != 1 {
 				t.Errorf("signature field after signing: %+v", sf)
 			}
 			if err := f.Set("form1[0].Page1[0].Name[0]", "ROE"); !errors.Is(err, ErrLocked) {

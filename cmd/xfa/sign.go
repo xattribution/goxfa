@@ -100,7 +100,7 @@ func signCmd(args []string) error {
 	if err := os.WriteFile(out, signed, 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "signed %s as %s\n", field, chain[0].Subject.CommonName)
+	fmt.Fprintf(os.Stderr, "signed %s\n", field)
 	return nil
 }
 
