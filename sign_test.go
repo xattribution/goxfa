@@ -95,6 +95,11 @@ func TestSign(t *testing.T) {
 				t.Fatal("signing must append to the original")
 			}
 			checkByteRange(t, signed)
+			// the widget carries a picture sized to the XFA field's box, for
+			// viewers that draw XFA forms themselves
+			if !bytes.Contains(signed[len(orig):], []byte("/BBox [0 0 216")) {
+				t.Error("the signature's appearance isn't sized to the field's box")
+			}
 			if out := pdfsig(t, signed); out != "" && (!strings.Contains(out, "Signature is Valid") || !strings.Contains(out, "Total document signed")) {
 				t.Errorf("pdfsig:\n%s", out)
 			}

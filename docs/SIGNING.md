@@ -109,8 +109,9 @@ The command line does the same: `xfa certs` lists the certificates, `xfa sigs fo
 
 ## What's left
 
-- **Acrobat.** Nothing here has been checked in Acrobat yet. The two questions are whether Acrobat shows a dynamic form's signature in the XFA field (it should, by the SOM name) and whether it reports the signature valid. pdfsig and the byte-range checks say the signature itself is sound.
-- **The Windows signer on a real card.** On a Windows computer with a CAC inserted, `winsign` finds the card's certificates and picks out the signature certificate, leaving out the authentication, card-authentication and encryption ones. Signing with the card (the PIN prompt and the CNG call) hasn't run yet.
+- **Acrobat.** Nothing here has been checked in Acrobat yet. The open questions are whether Acrobat shows a dynamic form's signature in the XFA field (it should, by the SOM name) and whether it reports the signature valid. pdfsig and the byte-range checks say the signature itself is sound.
+- **Other XFA viewers.** Viewers that lay out XFA themselves, such as pdfcraft, draw the signed AcroForm field's own picture in the XFA box. So every widget goxfa signs carries an appearance sized to the field's box, even when it has no place on a PDF page.
+- **The Windows signer on a real card.** It works: a CAC on Windows signed a DD 2875 through `winsign`, with the PIN prompt from Windows, and poppler reports the signature valid with the full DoD chain embedded. Only the card's signature certificate is offered; the authentication, card-authentication and encryption certificates are left out.
 - **Locks in the PDF.** Manifests are enforced inside goxfa only. Writing `/Lock` and FieldMDP needs checking against what Acrobat writes for XFA forms.
 - **Filters and certification.** The template's `<filter>` and `<mdp>` aren't read.
 - **macOS and Linux cards.** PKCS #11 through OpenSC, loaded with purego, is the plan. Any `crypto.Signer` works in the meantime.

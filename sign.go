@@ -427,6 +427,11 @@ func (f *Form) Sign(o SignOptions) ([]byte, error) {
 				d["Rect"] = types.Array{types.Integer(0), types.Integer(0), types.Integer(0), types.Integer(0)}
 				d["F"] = types.Integer(132) // print, locked
 				d["P"] = *pageRef
+				// viewers that lay out XFA draw this in the field's box
+				bw, bh := f.fieldBoxSize(o.Field)
+				ap := appearanceStream(bw, bh, o, when, alloc)
+				objs = append(objs, ap...)
+				d["AP"] = types.Dict{"N": *types.NewIndirectRef(ap[0].num, 0)}
 				if err := addAnnot(x, pageRef, ref, &objs); err != nil {
 					return nil, err
 				}
@@ -632,8 +637,44 @@ func (f *Form) appearance(widget types.Dict, o SignOptions, when time.Time, allo
 		h = -h
 	}
 	if w < 4 || h < 4 {
-		return nil, nil
+		// a widget with no place on a page: draw for the XFA field's box
+		w, h = f.fieldBoxSize(o.Field)
 	}
+	return appearanceStream(w, h, o, when, alloc), nil
+}
+
+// fieldBoxSize is the size of a field's box in the form's layout, where
+// viewers that lay out XFA draw the signature's appearance.
+func (f *Form) fieldBoxSize(som string) (w, h float64) {
+	w, h = 200, 30
+	doc, err := f.Layout()
+	if err != nil {
+		return
+	}
+	var find func([]Item) bool
+	find = func(items []Item) bool {
+		for _, it := range items {
+			if it.Field != nil && it.Field.SOM == som && it.W >= 4 && it.H >= 4 {
+				w, h = it.W, it.H
+				return true
+			}
+			if find(it.Items) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range doc.Pages {
+		if find(p.Items) {
+			break
+		}
+	}
+	return
+}
+
+// appearanceStream draws "Digitally signed by NAME" and the time in a
+// w×h box.
+func appearanceStream(w, h float64, o SignOptions, when time.Time, alloc func() int) []updObj {
 	name := o.Name
 	if name == "" {
 		name = displayName(o.Chain[0])
@@ -661,7 +702,7 @@ func (f *Form) appearance(widget types.Dict, o SignOptions, when time.Time, allo
 		"Resources": types.Dict{"Font": types.Dict{"Helv": types.Dict{
 			"Type": types.Name("Font"), "Subtype": types.Name("Type1"), "BaseFont": types.Name("Helvetica"), "Encoding": types.Name("WinAnsiEncoding"),
 		}}},
-	}}}, nil
+	}}}
 }
 
 // firstPage is the first leaf of the page tree.
