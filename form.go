@@ -163,7 +163,8 @@ func prefixSep(p string) string {
 }
 
 // Save writes the form's values back into the PDF: a new revision of the
-// datasets packet appended to the original file, as Acrobat saves. The
+// datasets packet appended to the original file, as Acrobat saves, with the
+// form packet's page numbers and checksum kept current (formstate.go). The
 // original bytes, earlier signatures and Reader usage rights stay as they
 // were. Nothing changed gives the original bytes.
 func (f *Form) Save() ([]byte, error) {
@@ -178,7 +179,12 @@ func (f *Form) Save() ([]byte, error) {
 	for _, p := range f.pdf.packets {
 		if p.name == "datasets" {
 			gen := p.ref.GenerationNumber.Value()
-			return appendUpdate(f.pdf.data, f.pdf.x, streamUpdates(map[int]newStream{p.ref.ObjectNumber.Value(): {gen: gen, content: f.dsDoc.Bytes()}}))
+			ds := f.dsDoc.Bytes()
+			ups := map[int]newStream{p.ref.ObjectNumber.Value(): {gen: gen, content: ds}}
+			if fp, b := f.formPacketFor(ds); fp != nil && fp.ref.ObjectNumber.Value() != p.ref.ObjectNumber.Value() {
+				ups[fp.ref.ObjectNumber.Value()] = newStream{gen: fp.ref.GenerationNumber.Value(), content: b}
+			}
+			return appendUpdate(f.pdf.data, f.pdf.x, streamUpdates(ups))
 		}
 	}
 	return nil, errors.New("xfa: the form has no datasets packet to write the values into")

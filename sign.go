@@ -305,7 +305,8 @@ const byteRangeHole = "[0 0000000000 0000000000 0000000000]"
 
 // Sign signs the form's signature field and returns the signed PDF:
 // the original bytes, then one incremental update with any values set
-// since the form was opened, the signature field and the signature. The
+// since the form was opened, the form packet kept current (formstate.go),
+// the signature field and the signature. The
 // form then stands for the signed PDF, so later values go after the
 // signature.
 //
@@ -352,6 +353,12 @@ func (f *Form) Sign(o SignOptions) ([]byte, error) {
 				objs = append(objs, updObj{num: p.ref.ObjectNumber.Value(), gen: p.ref.GenerationNumber.Value(), stream: f.dsDoc.Bytes()})
 			}
 		}
+	}
+	// and so does the form packet with its page numbers and a checksum for
+	// these datasets, or Acrobat would list the page numbers as filled in
+	// after the signature (formstate.go)
+	if fp, b := f.formPacketFor(f.datasetsNow()); fp != nil {
+		objs = append(objs, updObj{num: fp.ref.ObjectNumber.Value(), gen: fp.ref.GenerationNumber.Value(), stream: b})
 	}
 
 	// the AcroForm, which may sit inside the catalog

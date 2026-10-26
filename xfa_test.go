@@ -419,6 +419,12 @@ func TestRealForms(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// the form packet goes with the new datasets (formstate.go)
+			if f.WritesState() {
+				if ok, form := current(t, saved); !ok {
+					t.Errorf("after Save the form packet's checksum isn't current: %.300s", form)
+				}
+			}
 			g, err := Open(saved)
 			if err != nil {
 				t.Fatal(err)

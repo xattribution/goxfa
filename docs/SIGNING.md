@@ -42,17 +42,40 @@ goxfa does exactly this (`Form.Sign` in sign.go, the CMS in internal/cms). With 
 - `<filter>`: the certificates allowed (issuers, policy OIDs, key usage), digest methods, the subfilter, and whether a reason is required. None of the forms tested carries one, so goxfa doesn't read it yet. It does refuse certificates that aren't for signing.
 - `<mdp permissions="1|2|3">`: the first signature can certify the document. 1 allows no changes, 2 allows form filling and signing, and 3 also allows comments.
 
-**The form packet's checksum.** Acrobat stores a checksum of the form state in the `form` packet. When the checksum doesn't match, Acrobat merges the data again on open and runs the initialize and calculate scripts. That changes nothing on disk, so a signature stays valid. But a calculated field can show a different value than the one that was signed. goxfa doesn't run scripts, so a form whose calculated fields matter should be checked in Acrobat before anyone relies on it.
+**The form packet's checksum.** Acrobat keeps the form's state beside its data in the `form` packet: instance managers, fields' override flags, and the page numbers below. A `checksum` attribute on the packet's root says the state still goes with the data. When the checksum matches, Acrobat uses the saved state. When it doesn't, Acrobat merges the data again on open and runs the initialize and calculate scripts.
 
-**Page numbers after a signature.** Many DoD and Army forms put "Page n of m" fields on their master pages. The fields are bound to nothing, and their layout:ready scripts fill them in (`this.rawValue = xfa.layout.page(this)`). Acrobat saves their values in the form packet, a pageArea element per page under the root subform's pageSet. On a form goxfa signed, Acrobat lists these fields under "Form Fields Filled In" after the signature, and the bar across the top says "unsigned changes after the last signature". The signature is still valid, and filling in fields is a change the form allows. Nothing in the file changed after the signature: the values come from Acrobat's own layout when it opens the form.
+The checksum is SHA-1 over a re-serialization of the template packet, then the datasets packet, written in base64. This is PDFium's `CXFA_ChecksumContext` (xfa_checksum.cpp, called from fpdfsave.cpp), and goxfa's `formChecksum` (checksum.go) follows it:
 
-The checksum on the form packet is what decides it. Acrobat uses what the form packet saved only when the checksum matches what it computes. Adobe doesn't publish how. It isn't a SHA-1, MD5 or SHA-256 of any combination of the packets as stored, nor of the template and datasets with their whitespace removed. On a real DD 2875 (Oct 2026), Acrobat still listed the page numbers in each of these cases:
+- start tag: `<name`, then ` attr="value"` for each attribute (value as written), then `>`
+- empty element: `<name …></name>`
+- end tag: `</name>`
+- text: as written, entities not converted
+- CDATA: `<![CDATA[…]]>`
+- comment: `<!--…-->`
+- processing instruction: `<?target data?>`
 
-- goxfa wrote them into the form packet the way Acrobat does, with the values filled in (so the checksum was stale);
-- the same, with the checksum taken off;
-- goxfa wrote them with no value changed, leaving the template and datasets as they were.
+Text made only of bytes up to 0x20 is dropped when a start tag, comment or instruction follows it, and kept before an end tag. It reproduces the checksums Acrobat wrote on a real DD 2875 and those of 40 of 43 published forms. The other three (DAF 2005, DAF 4433, DAF 707) look published stale, the way a server that fills in a date without Acrobat leaves a form.
 
-So goxfa doesn't write them. Signing in Acrobat, or a later signature added in Acrobat, saves them with a checksum that matches. `Form.PageNumbered` says whether a form has such fields, so an application can send those forms to Acrobat to sign, or warn before it signs one. TestRealForms still checks goxfa's master pages and page numbers against the ones Acrobat saved (pagecheck_test.go).
+When `Save` and `Sign` write the datasets, they also write the form packet in the same revision, with its page numbers set and the checksum for the datasets they write (formstate.go). They do this only when `Form.WritesState` is true:
+
+- the form has a form packet;
+- its template runs no calculate script (other than the page numbers') and no initialize script.
+
+goxfa runs no scripts, so for a form with those it leaves the checksum as it was, and Acrobat runs them when it opens the form. Either way nothing on disk changes after a signature, so the signature stays valid. On a form that calculates, a calculated field can show a different value than the one that was signed, so check such a form in Acrobat before anyone relies on it.
+
+**Page numbers after a signature.** Many DoW and Army forms put "Page n of m" fields on their master pages. The fields are bound to nothing, and their layout:ready scripts fill them in (`this.rawValue = xfa.layout.page(this)`). Acrobat saves their values in the form packet, a pageArea element per page under the root subform's pageSet. When Acrobat doesn't use the saved state, or the state has no page numbers, it counts these fields as "Form Fields Filled In" after the signature. The bar across the top then says "unsigned changes after the last signature", though the signature is valid and nothing in the file changed.
+
+A form goxfa signed showed this before goxfa kept the form state (Oct 2026). On a DD 2875 downloaded fresh from WHS, signed with a test certificate (25 Oct 26), Acrobat's results were:
+
+| Values | Checksum | Page numbers in the form packet | Acrobat |
+|---|---|---|---|
+| filled | stale (goxfa before) | no | listed as filled in |
+| filled | current | yes | clean |
+| none | current | yes | clean |
+| filled | current | no | listed |
+| filled | stale | yes | listed |
+
+Both parts are needed. A form whose state goxfa doesn't keep (`WritesState` false) and that fills in its own page numbers (`Form.PageNumbered`) is still listed. An application can send those forms to Acrobat to sign, or warn before it signs one. Signing in Acrobat, or a later signature added in Acrobat, saves the state with a matching checksum. TestRealForms checks goxfa's master pages and page numbers against the ones Acrobat saved, and that the checksum is current after `Save`.
 
 **Reader usage rights.** Forms enabled for Reader carry a usage-rights signature (`/Perms /UR3`). An incremental update keeps it intact, which is why goxfa never rewrites the file. Acrobat checks that the changes after a UR3 signature are ones it allows. Filling fields and adding signatures are allowed.
 
