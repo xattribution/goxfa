@@ -143,7 +143,7 @@ The command line does the same: `xfa certs` lists the certificates, `xfa sigs fo
 
 ## What's left
 
-- **Acrobat.** Nothing here has been checked in Acrobat yet. The open questions are whether Acrobat shows a dynamic form's signature in the XFA field (it should, by the SOM name) and whether it reports the signature valid. pdfsig and the byte-range checks say the signature itself is sound.
+- **Acrobat.** A DD 2875 signed by goxfa opens clean in Acrobat: no changes listed after the signature (see Page numbers after a signature, 25 Oct 26). What's left are forms that run initialize or calculate scripts, whose state goxfa doesn't keep (`WritesState` false). Acrobat still lists their page numbers as filled in after the signature.
 - **Other XFA viewers.** Viewers that lay out XFA themselves, such as pdfcraft, draw the signed AcroForm field's own picture in the XFA box. So every widget goxfa signs carries an appearance sized to the field's box, even when it has no place on a PDF page.
 - **The Windows signer on a real card.** It works: a CAC on Windows signed a DD 2875 through `winsign`, with the PIN prompt from Windows, and poppler reports the signature valid with the full DoD chain embedded. Only the card's signature certificate is offered; the authentication, card-authentication and encryption certificates are left out.
 - **Locks in the PDF.** Manifests are enforced inside goxfa only. Writing `/Lock` and FieldMDP needs checking against what Acrobat writes for XFA forms.
