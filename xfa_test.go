@@ -30,14 +30,14 @@ const sampleBody = `
     <items><integer>1</integer><integer>0</integer></items>
     <caption placement="right"><value><text>I agree</text></value></caption>
   </field>
-  <field name="Branch" x="0" y="0.5in" w="2in" h="0.3in">
+  <field name="Team" x="0" y="0.5in" w="2in" h="0.3in">
     <ui><choiceList/></ui>
-    <items><text>Army</text><text>Navy</text><text>Air Force</text></items>
-    <items save="1" presence="hidden"><text>A</text><text>N</text><text>F</text></items>
+    <items><text>Sales</text><text>Support</text><text>Engineering</text></items>
+    <items save="1" presence="hidden"><text>S</text><text>U</text><text>E</text></items>
   </field>
   <exclGroup name="Status" x="2.2in" y="0.5in" w="3in" h="0.3in" layout="lr-tb">
-    <field name="Active" w="1in" h="0.3in"><ui><checkButton shape="round"/></ui><items><text>active</text></items><caption placement="right"><value><text>Active</text></value></caption></field>
-    <field name="Reserve" w="1in" h="0.3in"><ui><checkButton shape="round"/></ui><items><text>reserve</text></items><caption placement="right"><value><text>Reserve</text></value></caption></field>
+    <field name="FullTime" w="1in" h="0.3in"><ui><checkButton shape="round"/></ui><items><text>full</text></items><caption placement="right"><value><text>Full time</text></value></caption></field>
+    <field name="PartTime" w="1in" h="0.3in"><ui><checkButton shape="round"/></ui><items><text>part</text></items><caption placement="right"><value><text>Part time</text></value></caption></field>
   </exclGroup>
   <field name="Signed" x="0" y="1in" w="2in" h="0.3in">
     <ui><dateTimeEdit/></ui>
@@ -58,7 +58,7 @@ const sampleBody = `
   <field name="Line" w="7.5in" h="1in"><ui><textEdit multiLine="1"/></ui><border><edge/></border></field>
 </subform>`
 
-const sampleData = `<Page1><Name>DOE, JANE A</Name><Agree>0</Agree><Branch>N</Branch><Status>reserve</Status><Signed>20261016</Signed></Page1>` +
+const sampleData = `<Page1><Name>DOE, JANE A</Name><Agree>0</Agree><Team>U</Team><Status>part</Status><Signed>20261016</Signed></Page1>` +
 	`<Item><Line>one</Line></Item><Item><Line>two</Line></Item>`
 
 func openSample(t *testing.T) (*Form, []byte) {
@@ -79,8 +79,8 @@ func TestOpenReadsValues(t *testing.T) {
 	want := map[string]string{
 		"form1[0].Page1[0].Name[0]":   "DOE, JANE A",
 		"form1[0].Page1[0].Agree[0]":  "0",
-		"form1[0].Page1[0].Branch[0]": "N",
-		"form1[0].Page1[0].Status[0]": "reserve",
+		"form1[0].Page1[0].Team[0]":   "U",
+		"form1[0].Page1[0].Status[0]": "part",
 		"form1[0].Page1[0].Signed[0]": "20261016",
 		"form1[0].Item[0].Line[0]":    "one",
 		"form1[0].Item[1].Line[0]":    "two",
@@ -97,14 +97,14 @@ func TestOpenReadsValues(t *testing.T) {
 		if fd.SOM == "form1[0].Page1[0].Signed[0]" && fd.Display != "16 Oct 26" {
 			t.Errorf("date display = %q, want 16 Oct 26", fd.Display)
 		}
-		if fd.SOM == "form1[0].Page1[0].Branch[0]" && fd.Display != "Navy" {
-			t.Errorf("choice display = %q, want Navy", fd.Display)
+		if fd.SOM == "form1[0].Page1[0].Team[0]" && fd.Display != "Support" {
+			t.Errorf("choice display = %q, want Support", fd.Display)
 		}
 	}
 	for som, k := range map[string]string{
 		"form1[0].Page1[0].Name[0]":   "text",
 		"form1[0].Page1[0].Agree[0]":  "check",
-		"form1[0].Page1[0].Branch[0]": "choice",
+		"form1[0].Page1[0].Team[0]":   "choice",
 		"form1[0].Page1[0].Status[0]": "radio", // a group: its members are its options
 		"form1[0].Item[1].Line[0]":    "multiline",
 		"form1[0].Page1[0].Signed[0]": "date",
@@ -118,19 +118,19 @@ func TestOpenReadsValues(t *testing.T) {
 func TestSetAndSave(t *testing.T) {
 	f, orig := openSample(t)
 	vals := map[string]string{
-		"form1[0].Page1[0].Name[0]":   "ROE, RICHARD <&> \"Q\"",
-		"form1[0].Page1[0].Agree[0]":  "1",
-		"form1[0].Page1[0].Branch[0]": "F",
-		"form1[0].Item[1].Line[0]":    "line one\nline two",
+		"form1[0].Page1[0].Name[0]":  "ROE, RICHARD <&> \"Q\"",
+		"form1[0].Page1[0].Agree[0]": "1",
+		"form1[0].Page1[0].Team[0]":  "E",
+		"form1[0].Item[1].Line[0]":   "line one\nline two",
 	}
 	if err := f.SetValues(vals); err != nil {
 		t.Fatal(err)
 	}
 	// a radio member sets its group
-	if err := f.Set("form1[0].Page1[0].Status[0].Active[0]", "active"); err != nil {
+	if err := f.Set("form1[0].Page1[0].Status[0].FullTime[0]", "full"); err != nil {
 		t.Fatal(err)
 	}
-	vals["form1[0].Page1[0].Status[0]"] = "active"
+	vals["form1[0].Page1[0].Status[0]"] = "full"
 	// dates are typed as shown and stored as bound
 	if err := f.Set("form1[0].Page1[0].Signed[0]", "17 Oct 26"); err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestLayout(t *testing.T) {
 		t.Errorf("repeated lines at %v and %v", l0.Y, l1.Y)
 	}
 	all := strings.Join(texts, "|")
-	for _, w := range []string{"NAME (Last, First, MI)", "I agree", "Reserve", "bold", "16 Oct 26"} {
+	for _, w := range []string{"NAME (Last, First, MI)", "I agree", "Part time", "bold", "16 Oct 26"} {
 		if !strings.Contains(all, w) {
 			t.Errorf("laid-out text lacks %q: %s", w, all)
 		}

@@ -2,7 +2,7 @@
 
 Open, show, fill, save and sign XFA forms in pure Go.
 
-XFA forms are the PDF forms made in Adobe LiveCycle Designer and AEM Forms Designer. A *dynamic* XFA form has no ordinary PDF pages. Its pages exist only as a design (the template) and data (the datasets), and only Adobe Acrobat and Reader lay them out. Browsers and most other PDF readers show a "Please wait..." page instead. Many government and enterprise forms are built this way.
+XFA forms are the PDF forms made in Adobe LiveCycle Designer and AEM Forms Designer. A *dynamic* XFA form has no ordinary PDF pages. Its pages exist only as a design (the template) and data (the datasets), and only Adobe Acrobat and Reader lay them out. Browsers and most other PDF readers show a "Please wait..." page instead. Many official and enterprise forms are built this way.
 
 goxfa reads the design and the data, lays the pages out the way Acrobat does, and gives you three things:
 
@@ -25,8 +25,8 @@ saved, err := f.Save()                             // the original bytes plus th
 To serve a live form from your own program, mount the handler wherever you like:
 
 ```go
-mux.Handle("/forms/2875/", http.StripPrefix("/forms/2875", f.Handler(xfa.HandlerOptions{
-	Title: "DD 2875",
+mux.Handle("/forms/leave/", http.StripPrefix("/forms/leave", f.Handler(xfa.HandlerOptions{
+	Title: "Leave request",
 	Save:  func(pdf []byte) error { return os.WriteFile(out, pdf, 0o644) },
 })))
 ```
@@ -35,17 +35,17 @@ The handler does no authentication. The program that mounts it decides who can r
 
 ## Signing
 
-goxfa signs signature fields with any `crypto.Signer`, including a smart card (a CAC or PIV card) through the Windows certificate store. Package `winsign` reaches the store through CNG, with no cgo, and offers only the card's signature certificate.
+goxfa signs signature fields with any `crypto.Signer`, including a smart card through the Windows certificate store. Package `winsign` reaches the store through CNG, with no cgo, and offers only the card's signature certificate.
 
 ```go
-certs, err := winsign.SigningCertificates()   // a CAC's Digital Signature certificate, for one
+certs, err := winsign.SigningCertificates()   // a smart card's signing certificate, for one
 signer, err := certs[0].Signer()             // Windows asks for the PIN when it signs
 signed, err := f.Sign(xfa.SignOptions{Field: som, Signer: signer, Chain: certs[0].Chain})
 ```
 
 - **One update.** The signature and any new values go in one incremental update, so the signature covers the values it signs. Later saves go after it and leave it valid.
 - **Acrobat sees no changes after it.** Save and Sign keep the form's saved state current: the form packet's checksum and its page numbers, as Acrobat writes them. Acrobat then opens a goxfa-signed form clean, with nothing listed as changed after the signature.
-- **What the field shows.** The signature's picture fits the field's box. By default it reads "Digitally signed by DOE, JANE A" and the time, without the ID number from the certificate. `Text` and `Graphic` replace or add to it.
+- **What the field shows.** The signature's picture fits the field's box. By default it reads "Digitally signed by DOE, JANE A" and the time, with any ID number at the end of the certificate's name left out. `Text` and `Graphic` replace or add to it.
 - **Extras.** An RFC 3161 timestamp, embedded OCSP answers, CAdES, and the full certificate chain (`CompleteChain` fetches issuers a computer doesn't have). The network is used only when a program asks for these.
 - **From the page.** `HandlerOptions.Sign` lets people sign by clicking a signature field in the live form.
 - **Locks.** After signing, the fields in the signature's manifest refuse new values in goxfa.
@@ -94,9 +94,9 @@ xfa sign [-cert N] [-reason R] [-tsa URL] [-ocsp] form.pdf field out.pdf
 
 `go test ./...` runs against small forms built in the tests. Set `GOXFA_FORMS` to a folder of real forms and `TestRealForms` opens, lays out, flattens, fills, saves and reopens each one. Forms are never kept in the repository.
 
-Layout has been compared page by page with pdf.js's XFA renderer on a dozen real-world government forms with up to 431 fields, most of them encrypted. Saved forms reopen with their values in goxfa and in pdf.js, and pass qpdf's structure check.
+Layout has been compared page by page with pdf.js's XFA renderer on a dozen real-world forms with up to 431 fields, most of them encrypted. Saved forms reopen with their values in goxfa and in pdf.js, and pass qpdf's structure check.
 
-Signatures validate in poppler's pdfsig and OpenSSL, and the tests sign every real form in `GOXFA_FORMS`. A CAC on Windows signed a DD 2875 through `winsign`, with the full DoD chain embedded. In Acrobat, a DD 2875 signed by goxfa opens with no changes listed after the signature. The form-packet checksum matches the ones Acrobat wrote on that DD 2875 and on 40 of 43 published forms (the other three look published stale).
+Signatures validate in poppler's pdfsig and OpenSSL, and the tests sign every real form in `GOXFA_FORMS`. A smart card on Windows signed a real form through `winsign`, with the full certificate chain embedded. In Acrobat, a form signed by goxfa opens with no changes listed after the signature. The form-packet checksum matches the ones Acrobat wrote on that form and on 40 of 43 published forms (the other three look published stale).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 

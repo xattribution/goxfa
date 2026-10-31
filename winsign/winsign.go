@@ -1,5 +1,5 @@
 // Package winsign signs with the keys in the Windows certificate store,
-// smart cards (CAC, PIV) included, through CNG. It needs no cgo: the
+// smart cards included, through CNG. It needs no cgo: the
 // calls go straight to crypt32.dll and ncrypt.dll.
 //
 //	certs, err := winsign.Certificates()      // the user's signing certificates
@@ -38,7 +38,7 @@ type Signer interface {
 }
 
 // Extended key usages that mean a certificate signs documents: e-mail
-// protection (a CAC's signature certificate), Microsoft and IETF document
+// protection (a smart card's signature certificate), Microsoft and IETF document
 // signing, and Adobe's authentic documents.
 var signingEKUs = []asn1.ObjectIdentifier{
 	{1, 3, 6, 1, 4, 1, 311, 10, 3, 12},

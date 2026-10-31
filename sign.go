@@ -67,8 +67,8 @@ type SignatureField struct {
 	Label  string `json:"label,omitempty"`
 	Signed bool   `json:"signed"`
 	// Signer is the signing certificate's common name, as the signature
-	// carries it (it is not verified here). On a CAC it ends in the
-	// holder's ID number; show Name instead.
+	// carries it (it is not verified here). Some smart cards end it with
+	// the holder's ID number; show Name instead.
 	Signer string `json:"signer,omitempty"`
 	// Name is the signer's name to show: the signature's /Name, or one
 	// made from the certificate (LAST, FIRST M, without an ID number).
@@ -117,13 +117,13 @@ func (f *Form) pdfSigs() map[string]pdfSig {
 	return f.sigCache
 }
 
-var reCACName = regexp.MustCompile(`^([A-Z][A-Z' -]*)\.([A-Z][A-Z' -]*)(?:\.([A-Z][A-Z' -]*))?(?:\.[A-Z]+)?\.\d{10}$`)
+var reNumberedName = regexp.MustCompile(`^([A-Z][A-Z' -]*)\.([A-Z][A-Z' -]*)(?:\.([A-Z][A-Z' -]*))?(?:\.[A-Z]+)?\.\d{10}$`)
 
 // displayName is a person's name from a certificate. Names like
 // LAST.FIRST.MIDDLE.1234567890 show as LAST, FIRST M, without the number.
 func displayName(c *x509.Certificate) string {
 	cn := strings.TrimSpace(c.Subject.CommonName)
-	if m := reCACName.FindStringSubmatch(cn); m != nil {
+	if m := reNumberedName.FindStringSubmatch(cn); m != nil {
 		s := m[1] + ", " + m[2]
 		if m[3] != "" {
 			s += " " + m[3][:1]

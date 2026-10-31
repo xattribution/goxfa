@@ -1,6 +1,6 @@
 # Signing XFA forms
 
-This is what it takes to sign an XFA form with a smart card (a CAC or PIV card) so that Acrobat and Reader show the signature as valid, and what goxfa does of it. The last sections say what's built, how it's checked, and what's left.
+This is what it takes to sign an XFA form with a smart card so that Acrobat and Reader show the signature as valid, and what goxfa does of it. The last sections say what's built, how it's checked, and what's left.
 
 ## What a PDF signature is
 
@@ -54,7 +54,7 @@ The checksum is SHA-1 over a re-serialization of the template packet, then the d
 - comment: `<!--…-->`
 - processing instruction: `<?target data?>`
 
-Text made only of bytes up to 0x20 is dropped when a start tag, comment or instruction follows it, and kept before an end tag. It reproduces the checksums Acrobat wrote on a real DD 2875 and those of 40 of 43 published forms. The other three (DAF 2005, DAF 4433, DAF 707) look published stale, the way a server that fills in a date without Acrobat leaves a form.
+Text made only of bytes up to 0x20 is dropped when a start tag, comment or instruction follows it, and kept before an end tag. It reproduces the checksums Acrobat wrote on a real form and those of 40 of 43 published forms. The other three look published stale, the way a server that fills in a date without Acrobat leaves a form.
 
 When `Save` and `Sign` write the datasets, they also write the form packet in the same revision, with its page numbers set and the checksum for the datasets they write (formstate.go). They do this only when `Form.WritesState` is true:
 
@@ -63,9 +63,9 @@ When `Save` and `Sign` write the datasets, they also write the form packet in th
 
 goxfa runs no scripts, so for a form with those it leaves the checksum as it was, and Acrobat runs them when it opens the form. Either way nothing on disk changes after a signature, so the signature stays valid. On a form that calculates, a calculated field can show a different value than the one that was signed, so check such a form in Acrobat before anyone relies on it.
 
-**Page numbers after a signature.** Many DoW and Army forms put "Page n of m" fields on their master pages. The fields are bound to nothing, and their layout:ready scripts fill them in (`this.rawValue = xfa.layout.page(this)`). Acrobat saves their values in the form packet, a pageArea element per page under the root subform's pageSet. When Acrobat doesn't use the saved state, or the state has no page numbers, it counts these fields as "Form Fields Filled In" after the signature. The bar across the top then says "unsigned changes after the last signature", though the signature is valid and nothing in the file changed.
+**Page numbers after a signature.** Many forms put "Page n of m" fields on their master pages. The fields are bound to nothing, and their layout:ready scripts fill them in (`this.rawValue = xfa.layout.page(this)`). Acrobat saves their values in the form packet, a pageArea element per page under the root subform's pageSet. When Acrobat doesn't use the saved state, or the state has no page numbers, it counts these fields as "Form Fields Filled In" after the signature. The bar across the top then says "unsigned changes after the last signature", though the signature is valid and nothing in the file changed.
 
-A form goxfa signed showed this before goxfa kept the form state (Oct 2026). On a DD 2875 downloaded fresh from WHS, signed with a test certificate (25 Oct 26), Acrobat's results were:
+A form goxfa signed showed this before goxfa kept the form state (Oct 2026). On a real form downloaded fresh from its publisher, signed with a test certificate (25 Oct 26), Acrobat's results were:
 
 | Values | Checksum | Page numbers in the form packet | Acrobat |
 |---|---|---|---|
@@ -85,17 +85,17 @@ The card's private key never leaves the card. The program sends a hash and gets 
 
 | Platform | How | Notes |
 |---|---|---|
-| Windows | CNG through `ncrypt.dll` and the certificate store through `crypt32.dll`, called with `golang.org/x/sys/windows` and `syscall.NewLazyDLL`. No cgo. | Open the `MY` store, find the certificate, get its key with `CryptAcquireCertificatePrivateKey` (it comes back as an NCrypt key for smart cards), then sign with `NCryptSignHash` using PKCS #1 v1.5 padding and SHA-256. Windows shows its own PIN prompt through the card's minidriver. Most CAC users already have the middleware this needs. |
+| Windows | CNG through `ncrypt.dll` and the certificate store through `crypt32.dll`, called with `golang.org/x/sys/windows` and `syscall.NewLazyDLL`. No cgo. | Open the `MY` store, find the certificate, get its key with `CryptAcquireCertificatePrivateKey` (it comes back as an NCrypt key for smart cards), then sign with `NCryptSignHash` using PKCS #1 v1.5 padding and SHA-256. Windows shows its own PIN prompt through the card's minidriver. Most smart card users already have the middleware this needs. |
 | macOS | The Keychain and CryptoTokenKit through the Security framework. | Needs cgo or `purego` with Objective-C calls. Alternatively, use PKCS #11 through OpenSC. |
 | Linux | PKCS #11 through OpenSC (`opensc-pkcs11.so`), loaded with `purego`. No cgo. | The program asks for the PIN itself and passes it to `C_Login`. |
 
-The card has more than one certificate. A CAC carries a PIV Authentication certificate, a Digital Signature certificate and an encryption certificate. Signing uses the Digital Signature certificate. Choose the one whose key usage includes digitalSignature and nonRepudiation, and whose extended key usage doesn't limit it to client authentication. Cards issued in recent years may hold ECC keys (P-256 or P-384) rather than RSA 2048. The CMS code should handle both, using ECDSA with SHA-256 or SHA-384.
+A card usually holds more than one certificate: one for signing in, one for signing documents, and one for encryption. Signing uses the document-signing one. Choose the one whose key usage includes digitalSignature and nonRepudiation, and whose extended key usage doesn't limit it to client authentication. Cards issued in recent years may hold ECC keys (P-256 or P-384) rather than RSA 2048. The CMS code should handle both, using ECDSA with SHA-256 or SHA-384.
 
-The certificate's common name usually ends in the holder's ID number (`LAST.FIRST.MIDDLE.1234567890`). The signature's appearance can show the name without the number. The certificate itself is embedded in the signature as it is.
+Some cards end the certificate's common name with the holder's ID number (`LAST.FIRST.MIDDLE.1234567890`). The signature's appearance can show the name without the number. The certificate itself is embedded in the signature as it is.
 
 ## Trust and long-term validation
 
-**Trust.** Acrobat trusts a signature when its chain ends in a root that Acrobat trusts. Government roots are often not in Adobe's own trust list. Organizations either import their roots into Acrobat or turn on "Use Windows certificate store for validating signatures" in Acrobat's signature preferences. goxfa can't change what a reader trusts. It can embed the full chain up to the root, so that any reader with the root installed can validate.
+**Trust.** Acrobat trusts a signature when its chain ends in a root that Acrobat trusts. Many organizations' roots are not in Adobe's own trust list. Organizations either import their roots into Acrobat or turn on "Use Windows certificate store for validating signatures" in Acrobat's signature preferences. goxfa can't change what a reader trusts. It can embed the full chain up to the root, so that any reader with the root installed can validate.
 
 **Revocation.** A reader checks whether the certificate was revoked, through OCSP or a CRL. If the signature is to stay valid after the certificate expires or the reader is offline, embed the answers at signing time. There are two ways:
 
@@ -110,7 +110,7 @@ CRLs for large PKIs can be tens of megabytes. Prefer OCSP.
 
 ```go
 signed, err := form.Sign(xfa.SignOptions{
-	Field:  "form1[0].page1[0].Part1[0].userSig[0].userSig[0]",
+	Field:  "form1[0].Page1[0].Signature[0]",
 	Signer: signer,           // any crypto.Signer: a card's key through winsign, or a software key
 	Chain:  chain,            // signing certificate first, then its issuers
 	Reason: "I agree",
@@ -130,7 +130,7 @@ signed, err := form.Sign(xfa.SignOptions{
 
 Programs that serve the live form can let people sign from the page: `HandlerOptions.Sign` gives the signer for a click on a signature field, and the signed PDF goes to `Save`.
 
-**The Windows certificate store** is reached through package `winsign`, with no cgo. `winsign.SigningCertificates()` lists the certificates that have a private key and are for signing. On a CAC that leaves the Digital Signature certificate: the authentication certificate (client authentication and smart card logon only) and the encryption certificate are left out. `Cert.Signer()` opens the key through CNG, and Windows asks for the PIN when the signature is made. The chain is built from what Windows has installed, and nothing is fetched. On a computer without the issuing CAs installed, `xfa.CompleteChain` fetches them from the certificate's issuer URL, so the signature carries the whole chain.
+**The Windows certificate store** is reached through package `winsign`, with no cgo. `winsign.SigningCertificates()` lists the certificates that have a private key and are for signing. On a smart card that leaves the document-signing certificate: the sign-in certificates (client authentication and smart card logon only) and the encryption certificate are left out. `Cert.Signer()` opens the key through CNG, and Windows asks for the PIN when the signature is made. The chain is built from what Windows has installed, and nothing is fetched. On a computer without the issuing CAs installed, `xfa.CompleteChain` fetches them from the certificate's issuer URL, so the signature carries the whole chain.
 
 The command line does the same: `xfa certs` lists the certificates, `xfa sigs form.pdf` lists the signature fields, and `xfa sign [-cert N] [-reason ...] [-tsa URL] [-ocsp] form.pdf field out.pdf` signs, fetching missing issuers unless `-fetch-issuers=false`. Off Windows, `-key` and `-chain` take PEM files.
 
@@ -143,9 +143,9 @@ The command line does the same: `xfa certs` lists the certificates, `xfa sigs fo
 
 ## What's left
 
-- **Acrobat.** A DD 2875 signed by goxfa opens clean in Acrobat: no changes listed after the signature (see Page numbers after a signature, 25 Oct 26). What's left are forms that run initialize or calculate scripts, whose state goxfa doesn't keep (`WritesState` false). Acrobat still lists their page numbers as filled in after the signature.
+- **Acrobat.** A real form signed by goxfa opens clean in Acrobat: no changes listed after the signature (see Page numbers after a signature, 25 Oct 26). What's left are forms that run initialize or calculate scripts, whose state goxfa doesn't keep (`WritesState` false). Acrobat still lists their page numbers as filled in after the signature.
 - **Other XFA viewers.** Viewers that lay out XFA themselves, such as pdfcraft, draw the signed AcroForm field's own picture in the XFA box. So every widget goxfa signs carries an appearance sized to the field's box, even when it has no place on a PDF page.
-- **The Windows signer on a real card.** It works: a CAC on Windows signed a DD 2875 through `winsign`, with the PIN prompt from Windows, and poppler reports the signature valid with the full DoD chain embedded. Only the card's signature certificate is offered; the authentication, card-authentication and encryption certificates are left out.
+- **The Windows signer on a real card.** It works: a smart card on Windows signed a real form through `winsign`, with the PIN prompt from Windows, and poppler reports the signature valid with the full certificate chain embedded. Only the card's signature certificate is offered; the authentication, card-authentication and encryption certificates are left out.
 - **Locks in the PDF.** Manifests are enforced inside goxfa only. Writing `/Lock` and FieldMDP needs checking against what Acrobat writes for XFA forms.
 - **Filters and certification.** The template's `<filter>` and `<mdp>` aren't read.
 - **macOS and Linux cards.** PKCS #11 through OpenSC, loaded with purego, is the plan. Any `crypto.Signer` works in the meantime.

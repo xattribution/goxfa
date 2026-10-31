@@ -12,7 +12,7 @@ import (
 
 // The checksum as PDFium computes it. Each value was computed by a second,
 // independent implementation of the same rules, which reproduces the
-// checksums Acrobat wrote on a real DD 2875 and on 40 of 43 published
+// checksums Acrobat wrote on a real form and on 40 of 43 published
 // forms; the three others look published stale (docs/SIGNING.md).
 func TestFormChecksum(t *testing.T) {
 	for _, c := range []struct{ name, template, datasets, want string }{
@@ -37,7 +37,7 @@ func TestFormChecksum(t *testing.T) {
 }
 
 // pagedTemplate is a form with a page number on its master page, as the
-// DD 2875 has; extra goes in the body.
+// the real form has; extra goes in the body.
 func pagedTemplate(extra string) string {
 	return `<template xmlns="http://www.xfa.org/schema/xfa-template/3.3/">
 <subform name="form1" layout="tb" locale="en_US">

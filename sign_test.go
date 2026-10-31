@@ -126,7 +126,7 @@ func TestSign(t *testing.T) {
 				t.Errorf("signing twice: %v", err)
 			}
 			// fields the signature doesn't lock can still change, after it
-			if err := f.Set("form1[0].Page1[0].Branch[0]", "A"); err != nil {
+			if err := f.Set("form1[0].Page1[0].Team[0]", "S"); err != nil {
 				t.Fatal(err)
 			}
 			later, err := f.Save()

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// The certificates on a CAC, by their key usages, plus a TLS certificate.
+// The certificates on a typical smart card, by their key usages, plus a TLS certificate.
 func TestCanSign(t *testing.T) {
 	now := time.Now()
 	valid := func(c x509.Certificate) *x509.Certificate {
